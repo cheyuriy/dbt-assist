@@ -12,7 +12,15 @@ pub struct CLI {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Set up all necessary settings and directories to make dbt-assist work
-    Setup,
+    Setup {
+        /// Only test connectivity and permissions without making any actual changes to the environment
+        #[arg(long)]
+        test_only: bool,
+
+        /// Enable verbose logging
+        #[arg(long)]
+        verbose: bool,
+    },
 
     /// Initialize the current dbt project to work with VSCode and dbt-assist
     Init,
