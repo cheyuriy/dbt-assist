@@ -7,6 +7,10 @@ use clap::{Parser, Subcommand};
 pub struct CLI {
     #[command(subcommand)]
     pub command: Commands,
+
+    /// Enable verbose logging
+    #[arg(long, global = true)]
+    pub verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -16,10 +20,6 @@ pub enum Commands {
         /// Only test connectivity and permissions without making any actual changes to the environment
         #[arg(long)]
         test_only: bool,
-
-        /// Enable verbose logging
-        #[arg(long)]
-        verbose: bool,
     },
 
     /// Initialize the current dbt project to work with VSCode and dbt-assist

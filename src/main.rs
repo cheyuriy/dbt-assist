@@ -1,17 +1,19 @@
 mod cli;
 mod commands;
+mod verbose;
 
 use clap::Parser;
 use cli::CLI;
 
 fn main() {
     let cli = CLI::parse();
+    verbose::set_verbose(cli.verbose);
 
     match cli.command {
-        cli::Commands::Setup { test_only, verbose } => {
+        cli::Commands::Setup { test_only } => {
             println!("Setting up...");
             // Call the setup function from the setup module
-            crate::commands::setup(test_only, verbose);
+            crate::commands::setup(test_only);
         }
         cli::Commands::Init => {
             println!("Initializing...");

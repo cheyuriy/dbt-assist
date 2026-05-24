@@ -1,4 +1,7 @@
-pub fn setup(test_only: bool, verbose: bool) {
+use crate::vprintln;
+
+pub fn setup(test_only: bool) {
+    vprintln!("Verbose mode enabled");
     println!("Setting up the environment...");
     if test_only {
         println!("Running in test-only mode...");
