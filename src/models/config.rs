@@ -41,12 +41,6 @@ pub enum ManifestStorage {
         path: String,
         test_file: String,
     },
-
-    S3 {
-        bucket: String,
-        path: String,
-        test_file: String,
-    }
 }
 
 impl AppConfig {
@@ -217,32 +211,6 @@ manifest_storage:
                 assert_eq!(test_file, "prefix/.healthcheck");
             }
             _ => panic!("expected GCS variant"),
-        }
-    }
-
-    #[test]
-    fn load_s3_manifest_storage() {
-        let yaml = r#"
-dbt_api_connection:
-  type: direct
-  dbt_api_url: https://api.example.com
-  dbt_api_token: tok
-manifest_storage:
-  type: s3
-  bucket: my-s3-bucket
-  path: dir/manifest
-  test_file: dir/.healthcheck
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
-
-        match config.manifest_storage {
-            ManifestStorage::S3 { bucket, path, test_file } => {
-                assert_eq!(bucket, "my-s3-bucket");
-                assert_eq!(path, "dir/manifest");
-                assert_eq!(test_file, "dir/.healthcheck");
-            }
-            _ => panic!("expected S3 variant"),
         }
     }
 
