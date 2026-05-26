@@ -13,7 +13,6 @@ fn main() {
 
     match cli.command {
         cli::Commands::Setup { test_only } => {
-            println!("Setting up...");
             // Call the setup function from the setup module
             crate::commands::setup(test_only);
         }
