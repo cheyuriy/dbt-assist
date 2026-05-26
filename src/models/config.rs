@@ -8,6 +8,7 @@ pub struct AppConfig {
     pub dbt_api_connection: DbtApiConnection,
     pub manifest_storage: ManifestStorage,
     pub service_account_path: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -193,6 +194,7 @@ manifest_storage:
   type: local
   path: /var/manifest
 service_account_path: /sa.json
+project: my-project
 "#,
         );
         let config = load_config().expect("load config");
@@ -367,6 +369,7 @@ manifest_storage:
                 path: "/var/manifest".to_string(),
             },
             service_account_path: Some("/sa.json".to_string()),
+            project: Some("my-project".to_string()),
         };
 
         save_config(&original).expect("save config");
