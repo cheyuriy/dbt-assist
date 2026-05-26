@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod verbose;
 mod models;
+mod gcp;
 
 use clap::Parser;
 use cli::CLI;
