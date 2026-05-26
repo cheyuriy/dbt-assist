@@ -1,5 +1,7 @@
 use serde::{Serialize, Deserialize};
+use config::{Config, Environment, File};
 use std::path::PathBuf;
+use std::env;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
@@ -23,7 +25,7 @@ pub enum DbtApiConnection {
 
     NormalProxy {
         proxy_url: String,
-        proxy_key: Option<String>,
+        proxy_token: Option<String>,
     }
 }
 
@@ -43,64 +45,146 @@ pub enum ManifestStorage {
     },
 }
 
-impl AppConfig {
-    pub fn new(dbt_api_connection: DbtApiConnection, manifest_storage: ManifestStorage, service_account_path: Option<String>) -> Self {
-        AppConfig {
-            dbt_api_connection,
-            manifest_storage,
-            service_account_path,
-        }
+fn default_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Some(proj_dirs) =
+        directories::ProjectDirs::from("com", "cheyuriydev", env!("CARGO_PKG_NAME"))
+    {
+        Ok(proj_dirs.config_dir().to_path_buf())
+    } else {
+        Err("Could not determine default config directory".into())
     }
+}
 
-    pub fn load_from_file(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-        let config_content = std::fs::read_to_string(path)?;
-        let config: AppConfig = serde_yml::from_str::<AppConfig>(&config_content)?;
-        Ok(config)
+pub fn config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Ok(dir) = env::var(format!("{}_CONFIG_DIR", env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase())) {
+        let dir = PathBuf::from(dir);
+        if dir.exists() {
+            Ok(dir)
+        } else {
+            Err("Config directory specified in environment variable does not exist".into())
+        }
+    } else {
+        default_config_dir()
     }
+}
+
+pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
+    let dir = config_dir()?;
+    let path = dir.join("config.yaml");
+    let pkg_name = env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase();
+
+    let builder = Config::builder()
+        .add_source(File::from(path.clone()).required(false))
+        .add_source(Environment::with_prefix(pkg_name.as_str()).separator("__"));
+
+    let config = builder.build()?;
+
+    let config: AppConfig = config.try_deserialize()?;
+
+    Ok(config)
+}
+
+pub fn save_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = config_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("config.yaml");
+    let yaml = serde_yml::to_string(config)?;
+    std::fs::write(path, yaml)?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
+    use serial_test::serial;
+    use tempfile::TempDir;
 
-    fn write_config(yaml: &str) -> (tempfile::TempDir, PathBuf) {
-        let dir = tempdir().expect("create tempdir");
-        let path = dir.path().join("config.yaml");
-        std::fs::write(&path, yaml).expect("write config file");
-        (dir, path)
+    fn env_var_name() -> String {
+        format!(
+            "{}_CONFIG_DIR",
+            env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase()
+        )
     }
 
-    #[test]
-    fn new_sets_all_fields() {
-        let config = AppConfig::new(
-            DbtApiConnection::Direct {
-                dbt_api_url: "https://example.com".to_string(),
-                dbt_api_token: "tok".to_string(),
-            },
-            ManifestStorage::Local {
-                path: "/tmp/manifest".to_string(),
-            },
-            Some("/path/to/sa.json".to_string()),
-        );
+    /// Creates a tempdir, points `<PKG>_CONFIG_DIR` at it for the duration of the
+    /// test, and restores the previous value on drop. Pair every test that uses
+    /// it with `#[serial]` — env vars are process-global and `set_var` is
+    /// `unsafe` in Rust 2024 for that reason.
+    struct ConfigDirEnv {
+        dir: TempDir,
+        var: String,
+        prev: Option<String>,
+    }
 
-        match config.dbt_api_connection {
-            DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
-                assert_eq!(dbt_api_url, "https://example.com");
-                assert_eq!(dbt_api_token, "tok");
+    impl ConfigDirEnv {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("create tempdir");
+            let var = env_var_name();
+            let prev = env::var(&var).ok();
+            // SAFETY: serialized across tests via `#[serial]`.
+            unsafe { env::set_var(&var, dir.path()) };
+            Self { dir, var, prev }
+        }
+
+        fn path(&self) -> &std::path::Path {
+            self.dir.path()
+        }
+
+        fn write_config(&self, yaml: &str) {
+            std::fs::write(self.dir.path().join("config.yaml"), yaml)
+                .expect("write config file");
+        }
+    }
+
+    impl Drop for ConfigDirEnv {
+        fn drop(&mut self) {
+            // SAFETY: serialized across tests via `#[serial]`.
+            unsafe {
+                match &self.prev {
+                    Some(v) => env::set_var(&self.var, v),
+                    None => env::remove_var(&self.var),
+                }
             }
-            _ => panic!("expected Direct variant"),
         }
-        match config.manifest_storage {
-            ManifestStorage::Local { path } => assert_eq!(path, "/tmp/manifest"),
-            _ => panic!("expected Local variant"),
-        }
-        assert_eq!(config.service_account_path.as_deref(), Some("/path/to/sa.json"));
     }
 
     #[test]
+    #[serial]
+    fn config_dir_uses_env_var_when_set() {
+        let env = ConfigDirEnv::new();
+        let resolved = config_dir().expect("config_dir");
+        assert_eq!(resolved, env.path());
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_errors_when_env_dir_missing() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let missing = tmp.path().join("does-not-exist");
+        let var = env_var_name();
+        let prev = env::var(&var).ok();
+        // SAFETY: serialized across tests via `#[serial]`.
+        unsafe { env::set_var(&var, &missing) };
+
+        let result = config_dir();
+
+        // SAFETY: serialized across tests via `#[serial]`.
+        unsafe {
+            match prev {
+                Some(v) => env::set_var(&var, v),
+                None => env::remove_var(&var),
+            }
+        }
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
     fn load_direct_connection() {
-        let yaml = r#"
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
@@ -109,9 +193,9 @@ manifest_storage:
   type: local
   path: /var/manifest
 service_account_path: /sa.json
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
+"#,
+        );
+        let config = load_config().expect("load config");
 
         match config.dbt_api_connection {
             DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
@@ -124,8 +208,11 @@ service_account_path: /sa.json
     }
 
     #[test]
+    #[serial]
     fn load_gcp_function_proxy_connection() {
-        let yaml = r#"
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: gcp_function_proxy
   endpoint_url: https://gcp.example.com/fn
@@ -133,9 +220,9 @@ dbt_api_connection:
 manifest_storage:
   type: local
   path: /var/manifest
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
+"#,
+        );
+        let config = load_config().expect("load config");
 
         match config.dbt_api_connection {
             DbtApiConnection::GcpFunctionProxy { endpoint_url, auth_with_service_account } => {
@@ -147,30 +234,36 @@ manifest_storage:
     }
 
     #[test]
-    fn load_normal_proxy_connection() {
-        let yaml = r#"
+    #[serial]
+    fn load_normal_proxy_connection_without_token() {
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: normal_proxy
   proxy_url: https://proxy.example.com
 manifest_storage:
   type: local
   path: /var/manifest
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
+"#,
+        );
+        let config = load_config().expect("load config");
 
         match config.dbt_api_connection {
-            DbtApiConnection::NormalProxy { proxy_url, proxy_key } => {
+            DbtApiConnection::NormalProxy { proxy_url, proxy_token } => {
                 assert_eq!(proxy_url, "https://proxy.example.com");
-                assert!(proxy_key.is_none(), "proxy_key should default to None when omitted");
+                assert!(proxy_token.is_none(), "proxy_token should default to None when omitted");
             }
             _ => panic!("expected NormalProxy variant"),
         }
     }
 
     #[test]
+    #[serial]
     fn load_local_manifest_storage() {
-        let yaml = r#"
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
@@ -178,9 +271,9 @@ dbt_api_connection:
 manifest_storage:
   type: local
   path: /var/manifest
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
+"#,
+        );
+        let config = load_config().expect("load config");
 
         match config.manifest_storage {
             ManifestStorage::Local { path } => assert_eq!(path, "/var/manifest"),
@@ -189,8 +282,11 @@ manifest_storage:
     }
 
     #[test]
+    #[serial]
     fn load_gcs_manifest_storage() {
-        let yaml = r#"
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
@@ -200,9 +296,9 @@ manifest_storage:
   bucket: my-bucket
   path: prefix/manifest
   test_file: prefix/.healthcheck
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
+"#,
+        );
+        let config = load_config().expect("load config");
 
         match config.manifest_storage {
             ManifestStorage::GCS { bucket, path, test_file } => {
@@ -215,8 +311,11 @@ manifest_storage:
     }
 
     #[test]
+    #[serial]
     fn load_without_service_account_path() {
-        let yaml = r#"
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
@@ -224,38 +323,68 @@ dbt_api_connection:
 manifest_storage:
   type: local
   path: /var/manifest
-"#;
-        let (_dir, path) = write_config(yaml);
-        let config = AppConfig::load_from_file(&path).expect("load config");
-
+"#,
+        );
+        let config = load_config().expect("load config");
         assert!(config.service_account_path.is_none());
     }
 
     #[test]
-    fn load_from_nonexistent_file_errors() {
-        let dir = tempdir().expect("create tempdir");
-        let path = dir.path().join("does-not-exist.yaml");
-        assert!(AppConfig::load_from_file(&path).is_err());
+    #[serial]
+    fn load_errors_on_malformed_yaml() {
+        let env = ConfigDirEnv::new();
+        env.write_config("::: not yaml :::");
+        assert!(load_config().is_err());
     }
 
     #[test]
-    fn load_from_malformed_yaml_errors() {
-        let (_dir, path) = write_config("::: not yaml :::");
-        assert!(AppConfig::load_from_file(&path).is_err());
-    }
-
-    #[test]
-    fn load_with_unknown_connection_type_errors() {
-        let yaml = r#"
+    #[serial]
+    fn load_errors_on_unknown_connection_type() {
+        let env = ConfigDirEnv::new();
+        env.write_config(
+            r#"
 dbt_api_connection:
   type: bogus
   some_field: value
 manifest_storage:
   type: local
   path: /var/manifest
-"#;
-        let (_dir, path) = write_config(yaml);
-        assert!(AppConfig::load_from_file(&path).is_err());
+"#,
+        );
+        assert!(load_config().is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn save_then_load_roundtrips() {
+        let env = ConfigDirEnv::new();
+        let original = AppConfig {
+            dbt_api_connection: DbtApiConnection::Direct {
+                dbt_api_url: "https://api.example.com".to_string(),
+                dbt_api_token: "tok".to_string(),
+            },
+            manifest_storage: ManifestStorage::Local {
+                path: "/var/manifest".to_string(),
+            },
+            service_account_path: Some("/sa.json".to_string()),
+        };
+
+        save_config(&original).expect("save config");
+        assert!(env.path().join("config.yaml").exists());
+
+        let loaded = load_config().expect("load config");
+        match loaded.dbt_api_connection {
+            DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
+                assert_eq!(dbt_api_url, "https://api.example.com");
+                assert_eq!(dbt_api_token, "tok");
+            }
+            _ => panic!("expected Direct variant"),
+        }
+        match loaded.manifest_storage {
+            ManifestStorage::Local { path } => assert_eq!(path, "/var/manifest"),
+            _ => panic!("expected Local variant"),
+        }
+        assert_eq!(loaded.service_account_path.as_deref(), Some("/sa.json"));
     }
 }
 
