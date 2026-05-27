@@ -46,10 +46,34 @@ pub enum ManifestStorage {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigScope {
+    /// Project-local config directory: `./.dbt-assist/`.
+    Local,
+    /// User-global config directory (ProjectDirs, or `DBT_ASSIST_CONFIG_DIR` in discovery mode).
+    Global,
+}
+
+impl std::fmt::Display for ConfigScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigScope::Local => write!(f, "local"),
+            ConfigScope::Global => write!(f, "global"),
+        }
+    }
+}
+
+/// Discovery-mode helper: returns the project config dir only when it exists as a dir.
 fn project_config_dir() -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     let dir = cwd.join(format!(".{}", env!("CARGO_PKG_NAME")));
     if dir.is_dir() { Some(dir) } else { None }
+}
+
+/// Pure path resolver: returns `cwd/.<pkg>` without checking existence.
+fn local_config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let cwd = env::current_dir()?;
+    Ok(cwd.join(format!(".{}", env!("CARGO_PKG_NAME"))))
 }
 
 fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -62,24 +86,48 @@ fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
 }
 
-pub fn config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Ok(dir) = env::var(format!("{}_CONFIG_DIR", env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase())) {
-        let dir = PathBuf::from(dir);
-        if dir.exists() {
-            Ok(dir)
-        } else {
-            Err("Config directory specified in environment variable does not exist".into())
+/// Resolves a config directory and reports which scope it came from.
+///
+/// - `scope = None`: discovery mode. Priority is env var (`DBT_ASSIST_CONFIG_DIR`,
+///   must exist on disk, reported as Global) → project dir (`./.dbt-assist`, if
+///   present, reported as Local) → ProjectDirs global path.
+/// - `scope = Some(_)`: pure path resolver. No existence check, env var ignored.
+pub fn config_dir(
+    scope: Option<ConfigScope>,
+) -> Result<(PathBuf, ConfigScope), Box<dyn std::error::Error>> {
+    match scope {
+        Some(ConfigScope::Local) => Ok((local_config_path()?, ConfigScope::Local)),
+        Some(ConfigScope::Global) => Ok((global_config_dir()?, ConfigScope::Global)),
+        None => {
+            let env_var = format!(
+                "{}_CONFIG_DIR",
+                env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase()
+            );
+            if let Ok(dir) = env::var(&env_var) {
+                let dir = PathBuf::from(dir);
+                if dir.exists() {
+                    return Ok((dir, ConfigScope::Global));
+                }
+                return Err(
+                    "Config directory specified in environment variable does not exist".into(),
+                );
+            }
+            if let Some(dir) = project_config_dir() {
+                return Ok((dir, ConfigScope::Local));
+            }
+            Ok((global_config_dir()?, ConfigScope::Global))
         }
-    } else if let Some(dir) = project_config_dir() {
-        Ok(dir)
-    } else {
-        global_config_dir()
     }
 }
 
-pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
-    let dir = config_dir()?;
+pub fn load_config(
+    scope: Option<ConfigScope>,
+) -> Result<(AppConfig, ConfigScope), Box<dyn std::error::Error>> {
+    let (dir, resolved) = config_dir(scope)?;
     let path = dir.join("config.yaml");
+    if !path.is_file() {
+        return Err(format!("Config file not found at {}", path.display()).into());
+    }
     let pkg_name = env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase();
 
     let builder = Config::builder()
@@ -87,19 +135,21 @@ pub fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
         .add_source(Environment::with_prefix(pkg_name.as_str()).separator("__"));
 
     let config = builder.build()?;
-
     let config: AppConfig = config.try_deserialize()?;
 
-    Ok(config)
+    Ok((config, resolved))
 }
 
-pub fn save_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = config_dir()?;
+pub fn save_config(
+    config: &AppConfig,
+    scope: Option<ConfigScope>,
+) -> Result<ConfigScope, Box<dyn std::error::Error>> {
+    let (dir, resolved) = config_dir(scope)?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("config.yaml");
     let yaml = serde_yml::to_string(config)?;
     std::fs::write(path, yaml)?;
-    Ok(())
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -213,7 +263,7 @@ mod tests {
     #[serial]
     fn config_dir_uses_env_var_when_set() {
         let env = ConfigDirEnv::new();
-        let resolved = config_dir().expect("config_dir");
+        let (resolved, _) = config_dir(None).expect("config_dir");
         assert_eq!(resolved, env.path());
     }
 
@@ -224,7 +274,7 @@ mod tests {
         let cwd = CwdGuard::new();
         let project = cwd.make_project_config_dir();
 
-        let resolved = config_dir().expect("config_dir");
+        let (resolved, _) = config_dir(None).expect("config_dir");
         // Canonicalize because macOS resolves /tmp -> /private/tmp.
         assert_eq!(
             resolved.canonicalize().unwrap(),
@@ -241,7 +291,7 @@ mod tests {
         let cwd = CwdGuard::new();
         let _project = cwd.make_project_config_dir();
 
-        let resolved = config_dir().expect("config_dir");
+        let (resolved, _) = config_dir(None).expect("config_dir");
         assert_eq!(resolved, env.path());
     }
 
@@ -251,7 +301,7 @@ mod tests {
         let prev = clear_config_env();
         let cwd = CwdGuard::new(); // cwd has no `.dbt-assist`
 
-        let resolved = config_dir().expect("config_dir");
+        let (resolved, _) = config_dir(None).expect("config_dir");
         let expected = global_config_dir().expect("global_config_dir");
         assert_eq!(resolved, expected);
         // Sanity: fallback must not pick up anything from cwd.
@@ -270,7 +320,7 @@ mod tests {
         // SAFETY: serialized across tests via `#[serial]`.
         unsafe { env::set_var(&var, &missing) };
 
-        let result = config_dir();
+        let result = config_dir(None);
 
         // SAFETY: serialized across tests via `#[serial]`.
         unsafe {
@@ -300,7 +350,7 @@ service_account_path: /sa.json
 project: my-project
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
             DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
@@ -327,7 +377,7 @@ manifest_storage:
   path: /var/manifest
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
             DbtApiConnection::GcpFunctionProxy { endpoint_url, auth_with_service_account } => {
@@ -352,7 +402,7 @@ manifest_storage:
   path: /var/manifest
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
             DbtApiConnection::NormalProxy { proxy_url, proxy_token } => {
@@ -378,7 +428,7 @@ manifest_storage:
   path: /var/manifest
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
 
         match config.manifest_storage {
             ManifestStorage::Local { path } => assert_eq!(path, "/var/manifest"),
@@ -403,7 +453,7 @@ manifest_storage:
   test_file: prefix/.healthcheck
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
 
         match config.manifest_storage {
             ManifestStorage::GCS { bucket, path, test_file } => {
@@ -430,7 +480,7 @@ manifest_storage:
   path: /var/manifest
 "#,
         );
-        let config = load_config().expect("load config");
+        let (config, _) = load_config(None).expect("load config");
         assert!(config.service_account_path.is_none());
     }
 
@@ -439,7 +489,7 @@ manifest_storage:
     fn load_errors_on_malformed_yaml() {
         let env = ConfigDirEnv::new();
         env.write_config("::: not yaml :::");
-        assert!(load_config().is_err());
+        assert!(load_config(None).is_err());
     }
 
     #[test]
@@ -456,7 +506,7 @@ manifest_storage:
   path: /var/manifest
 "#,
         );
-        assert!(load_config().is_err());
+        assert!(load_config(None).is_err());
     }
 
     #[test]
@@ -475,10 +525,10 @@ manifest_storage:
             project: Some("my-project".to_string()),
         };
 
-        save_config(&original).expect("save config");
+        save_config(&original, None).expect("save config");
         assert!(env.path().join("config.yaml").exists());
 
-        let loaded = load_config().expect("load config");
+        let (loaded, _) = load_config(None).expect("load config");
         match loaded.dbt_api_connection {
             DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
                 assert_eq!(dbt_api_url, "https://api.example.com");
@@ -491,6 +541,142 @@ manifest_storage:
             _ => panic!("expected Local variant"),
         }
         assert_eq!(loaded.service_account_path.as_deref(), Some("/sa.json"));
+    }
+
+    fn sample_config() -> AppConfig {
+        AppConfig {
+            dbt_api_connection: DbtApiConnection::Direct {
+                dbt_api_url: "https://api.example.com".to_string(),
+                dbt_api_token: "tok".to_string(),
+            },
+            manifest_storage: ManifestStorage::Local {
+                path: "/var/manifest".to_string(),
+            },
+            service_account_path: None,
+            project: None,
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_some_local_returns_path_even_when_missing() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new(); // no `.dbt-assist` created
+        let (path, scope) = config_dir(Some(ConfigScope::Local)).expect("config_dir");
+        assert_eq!(scope, ConfigScope::Local);
+        // Dir does not yet exist on disk — pure resolver.
+        assert!(!path.exists());
+        let expected_name = format!(".{}", env!("CARGO_PKG_NAME"));
+        assert_eq!(path.file_name().unwrap(), expected_name.as_str());
+        let parent = path.parent().unwrap();
+        assert_eq!(
+            parent.canonicalize().unwrap(),
+            cwd.path().canonicalize().unwrap()
+        );
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_some_global_ignores_env_var() {
+        let env = ConfigDirEnv::new();
+        let (path, scope) = config_dir(Some(ConfigScope::Global)).expect("config_dir");
+        assert_eq!(scope, ConfigScope::Global);
+        let expected = global_config_dir().expect("global_config_dir");
+        assert_eq!(path, expected);
+        assert_ne!(path, env.path(), "env var must be ignored for Some(Global)");
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_some_local_ignores_env_var() {
+        let env = ConfigDirEnv::new();
+        let cwd = CwdGuard::new();
+        let (path, scope) = config_dir(Some(ConfigScope::Local)).expect("config_dir");
+        assert_eq!(scope, ConfigScope::Local);
+        assert_ne!(path, env.path(), "env var must be ignored for Some(Local)");
+        let parent = path.parent().unwrap();
+        assert_eq!(
+            parent.canonicalize().unwrap(),
+            cwd.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_none_reports_local_scope_when_project_dir_present() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new();
+        let project = cwd.make_project_config_dir();
+        let (path, scope) = config_dir(None).expect("config_dir");
+        assert_eq!(scope, ConfigScope::Local);
+        assert_eq!(
+            path.canonicalize().unwrap(),
+            project.canonicalize().unwrap()
+        );
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_none_reports_global_scope_for_env_var_hit() {
+        let env = ConfigDirEnv::new();
+        let (path, scope) = config_dir(None).expect("config_dir");
+        assert_eq!(scope, ConfigScope::Global);
+        assert_eq!(path, env.path());
+    }
+
+    #[test]
+    #[serial]
+    fn save_config_some_local_creates_dir_and_writes() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new(); // no `.dbt-assist` exists yet
+        let scope = save_config(&sample_config(), Some(ConfigScope::Local)).expect("save");
+        assert_eq!(scope, ConfigScope::Local);
+        let expected_dir = cwd.path().join(format!(".{}", env!("CARGO_PKG_NAME")));
+        assert!(
+            expected_dir.is_dir(),
+            "save_config must create the project config dir"
+        );
+        assert!(expected_dir.join("config.yaml").is_file());
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn save_config_some_local_then_load_some_local_roundtrips() {
+        let prev = clear_config_env();
+        let _cwd = CwdGuard::new();
+        save_config(&sample_config(), Some(ConfigScope::Local)).expect("save");
+        let (loaded, scope) = load_config(Some(ConfigScope::Local)).expect("load");
+        assert_eq!(scope, ConfigScope::Local);
+        match loaded.dbt_api_connection {
+            DbtApiConnection::Direct { dbt_api_url, .. } => {
+                assert_eq!(dbt_api_url, "https://api.example.com");
+            }
+            _ => panic!("expected Direct variant"),
+        }
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn load_config_some_local_errors_when_missing() {
+        let prev = clear_config_env();
+        let _cwd = CwdGuard::new(); // no `.dbt-assist/config.yaml`
+        assert!(load_config(Some(ConfigScope::Local)).is_err());
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn save_config_none_reports_local_when_project_dir_present() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new();
+        let _project = cwd.make_project_config_dir();
+        let scope = save_config(&sample_config(), None).expect("save");
+        assert_eq!(scope, ConfigScope::Local);
+        restore_config_env(prev);
     }
 }
 

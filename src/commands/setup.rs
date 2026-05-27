@@ -8,14 +8,15 @@ use std::env;
 pub fn setup(test_only: bool) {
     vprintln!("Verbose mode enabled");
 
-    let dir = match config_dir() {
-        Ok(d) => d,
+    let (dir, scope) = match config_dir(None) {
+        Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("Failed to resolve config directory: {e}");
             return;
         }
     };
     let path = dir.join("config.yaml");
+    println!("Using {scope} config at {}", path.display());
     vprintln!("Config path: {}", path.display());
     let exists = path.exists();
 
@@ -27,8 +28,8 @@ pub fn setup(test_only: bool) {
             );
             return;
         }
-        match load_config() {
-            Ok(config) => test_config(&config),
+        match load_config(None) {
+            Ok((config, _)) => test_config(&config),
             Err(e) => eprintln!("Failed to load config: {e}"),
         }
         return;
@@ -59,11 +60,17 @@ pub fn setup(test_only: bool) {
         project,
     };
 
-    if let Err(e) = save_config(&config) {
-        eprintln!("Failed to save config: {e}");
-        return;
-    }
-    println!("Setup complete. Config saved to {}.", path.display());
+    let saved_scope = match save_config(&config, None) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to save config: {e}");
+            return;
+        }
+    };
+    println!(
+        "Setup complete. {saved_scope} config saved to {}.",
+        path.display()
+    );
 
     test_config(&config);
 }
