@@ -46,7 +46,13 @@ pub enum ManifestStorage {
     },
 }
 
-fn default_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn project_config_dir() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    let dir = cwd.join(format!(".{}", env!("CARGO_PKG_NAME")));
+    if dir.is_dir() { Some(dir) } else { None }
+}
+
+fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(proj_dirs) =
         directories::ProjectDirs::from("com", "cheyuriydev", env!("CARGO_PKG_NAME"))
     {
@@ -64,8 +70,10 @@ pub fn config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
         } else {
             Err("Config directory specified in environment variable does not exist".into())
         }
+    } else if let Some(dir) = project_config_dir() {
+        Ok(dir)
     } else {
-        default_config_dir()
+        global_config_dir()
     }
 }
 
@@ -149,12 +157,107 @@ mod tests {
         }
     }
 
+    /// Switches the process cwd to a tempdir for the duration of the test and
+    /// restores the previous cwd on drop. Pair with `#[serial]` — cwd is
+    /// process-global.
+    struct CwdGuard {
+        dir: TempDir,
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("create tempdir");
+            let prev = env::current_dir().expect("read cwd");
+            env::set_current_dir(dir.path()).expect("set cwd");
+            Self { dir, prev }
+        }
+
+        fn path(&self) -> &std::path::Path {
+            self.dir.path()
+        }
+
+        fn make_project_config_dir(&self) -> PathBuf {
+            let project = self.dir.path().join(format!(".{}", env!("CARGO_PKG_NAME")));
+            std::fs::create_dir_all(&project).expect("create project config dir");
+            project
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = env::set_current_dir(&self.prev);
+        }
+    }
+
+    fn clear_config_env() -> Option<String> {
+        let var = env_var_name();
+        let prev = env::var(&var).ok();
+        // SAFETY: serialized across tests via `#[serial]`.
+        unsafe { env::remove_var(&var) };
+        prev
+    }
+
+    fn restore_config_env(prev: Option<String>) {
+        let var = env_var_name();
+        // SAFETY: serialized across tests via `#[serial]`.
+        unsafe {
+            match prev {
+                Some(v) => env::set_var(&var, v),
+                None => env::remove_var(&var),
+            }
+        }
+    }
+
     #[test]
     #[serial]
     fn config_dir_uses_env_var_when_set() {
         let env = ConfigDirEnv::new();
         let resolved = config_dir().expect("config_dir");
         assert_eq!(resolved, env.path());
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_uses_project_dir_when_present() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new();
+        let project = cwd.make_project_config_dir();
+
+        let resolved = config_dir().expect("config_dir");
+        // Canonicalize because macOS resolves /tmp -> /private/tmp.
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            project.canonicalize().unwrap()
+        );
+
+        restore_config_env(prev);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_takes_priority_over_project_dir() {
+        let env = ConfigDirEnv::new();
+        let cwd = CwdGuard::new();
+        let _project = cwd.make_project_config_dir();
+
+        let resolved = config_dir().expect("config_dir");
+        assert_eq!(resolved, env.path());
+    }
+
+    #[test]
+    #[serial]
+    fn config_dir_falls_back_to_global_without_project_dir() {
+        let prev = clear_config_env();
+        let cwd = CwdGuard::new(); // cwd has no `.dbt-assist`
+
+        let resolved = config_dir().expect("config_dir");
+        let expected = global_config_dir().expect("global_config_dir");
+        assert_eq!(resolved, expected);
+        // Sanity: fallback must not pick up anything from cwd.
+        assert!(!resolved.starts_with(cwd.path()));
+
+        restore_config_env(prev);
     }
 
     #[test]
