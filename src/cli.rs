@@ -1,4 +1,21 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+use crate::models::config::ConfigScope;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ScopeArg {
+    Local,
+    Global,
+}
+
+impl From<ScopeArg> for ConfigScope {
+    fn from(value: ScopeArg) -> Self {
+        match value {
+            ScopeArg::Local => ConfigScope::Local,
+            ScopeArg::Global => ConfigScope::Global,
+        }
+    }
+}
 
 /// Tool to assist your work with DBT
 #[derive(Parser)]
@@ -20,6 +37,11 @@ pub enum Commands {
         /// Only test connectivity and permissions without making any actual changes to the environment
         #[arg(long)]
         test_only: bool,
+
+        /// Target config scope: "local" (./.dbt-assist/) or "global" (user config directory).
+        /// Omit to auto-detect; you'll be prompted only if no config exists yet.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
     },
 
     /// Initialize the current dbt project to work with VSCode and dbt-assist

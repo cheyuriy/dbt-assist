@@ -12,9 +12,8 @@ fn main() {
     verbose::set_verbose(cli.verbose);
 
     match cli.command {
-        cli::Commands::Setup { test_only } => {
-            // Call the setup function from the setup module
-            crate::commands::setup(test_only);
+        cli::Commands::Setup { test_only, scope } => {
+            crate::commands::setup(test_only, scope.map(Into::into));
         }
         cli::Commands::Init => {
             println!("Initializing...");

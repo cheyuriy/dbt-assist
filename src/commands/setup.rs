@@ -1,48 +1,74 @@
 use crate::models::config::{
-    AppConfig, DbtApiConnection, ManifestStorage, config_dir, load_config, save_config,
+    AppConfig, ConfigScope, DbtApiConnection, ManifestStorage, config_dir, load_config, save_config,
 };
 use crate::vprintln;
 use dialoguer::{Confirm, Input, Select};
 use std::env;
 
-pub fn setup(test_only: bool) {
+pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     vprintln!("Verbose mode enabled");
 
-    let (dir, scope) = match config_dir(None) {
+    let (disc_path, disc_scope) = match config_dir(None) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("Failed to resolve config directory: {e}");
             return;
         }
     };
-    let path = dir.join("config.yaml");
-    println!("Using {scope} config at {}", path.display());
-    vprintln!("Config path: {}", path.display());
-    let exists = path.exists();
+    let disc_exists = disc_path.join("config.yaml").exists();
+    vprintln!(
+        "Discovered {disc_scope} config dir at {} (config.yaml exists: {disc_exists})",
+        disc_path.display()
+    );
+
+    let target_scope = match (scope, disc_exists) {
+        (Some(s), _) => s,
+        (None, true) => disc_scope,
+        (None, false) => ask_user_for_scope(),
+    };
+
+    let (target_path, _) = match config_dir(Some(target_scope)) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            eprintln!("Failed to resolve {target_scope} config directory: {e}");
+            return;
+        }
+    };
+    let target_yaml = target_path.join("config.yaml");
+    let target_exists = target_yaml.exists();
 
     if test_only {
-        if !exists {
+        if !target_exists {
             eprintln!(
                 "No config found at {}. Run `dbt-assist setup` first.",
-                path.display()
+                target_yaml.display()
             );
             return;
         }
-        match load_config(None) {
+        println!("Using {target_scope} config at {}", target_yaml.display());
+        match load_config(Some(target_scope)) {
             Ok((config, _)) => test_config(&config),
             Err(e) => eprintln!("Failed to load config: {e}"),
         }
         return;
     }
 
-    if exists {
-        println!("Config already exists at {}.", path.display());
-        let overwrite = Confirm::new()
-            .with_prompt("Overwrite existing config?")
+    if target_exists {
+        println!("Using {target_scope} config at {}", target_yaml.display());
+    } else {
+        println!(
+            "Creating {target_scope} config at {}",
+            target_yaml.display()
+        );
+    }
+
+    if target_exists {
+        let modify = Confirm::new()
+            .with_prompt("Modify existing config?")
             .default(false)
             .interact()
             .unwrap_or(false);
-        if !overwrite {
+        if !modify {
             println!("Keeping existing config. Exiting.");
             return;
         }
@@ -60,7 +86,7 @@ pub fn setup(test_only: bool) {
         project,
     };
 
-    let saved_scope = match save_config(&config, None) {
+    let saved_scope = match save_config(&config, Some(target_scope)) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to save config: {e}");
@@ -69,10 +95,26 @@ pub fn setup(test_only: bool) {
     };
     println!(
         "Setup complete. {saved_scope} config saved to {}.",
-        path.display()
+        target_yaml.display()
     );
 
     test_config(&config);
+}
+
+fn ask_user_for_scope() -> ConfigScope {
+    println!("\n== Config scope ==");
+    let options = ["Local (./.dbt-assist/)", "Global (user config directory)"];
+    let choice = Select::new()
+        .with_prompt("Which config scope to create?")
+        .items(options)
+        .default(0)
+        .interact()
+        .unwrap();
+    if choice == 0 {
+        ConfigScope::Local
+    } else {
+        ConfigScope::Global
+    }
 }
 
 fn setup_service_account() -> Option<String> {
