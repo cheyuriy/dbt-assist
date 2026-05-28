@@ -1,19 +1,26 @@
 use crate::models::config::AppConfig;
 use google_cloud_storage::client::{
-    Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile
+    Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile,
 };
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::{env, ops::Deref};
 
-pub async fn get_client(config: &AppConfig) -> Result<(Client, String), Box<dyn std::error::Error>> {
+pub async fn get_client(
+    config: &AppConfig,
+) -> Result<(Client, String), Box<dyn std::error::Error>> {
     let service_account_path = get_service_account_path(config)?;
 
-    let client_config= load_service_account(&service_account_path).await?;
+    let client_config = load_service_account(&service_account_path).await?;
 
     let project_id = if config.project.is_some() {
         config.project.as_ref().unwrap().deref().to_string()
     } else if client_config.project_id.is_some() {
-        client_config.project_id.as_ref().unwrap().deref().to_string()
+        client_config
+            .project_id
+            .as_ref()
+            .unwrap()
+            .deref()
+            .to_string()
     } else {
         return Err("Project ID not found in configuration or service account credentials".into());
     };
@@ -23,7 +30,7 @@ pub async fn get_client(config: &AppConfig) -> Result<(Client, String), Box<dyn 
     Ok((gcs_client, project_id))
 }
 
-fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(service_account_path) = &config.service_account_path {
         let res = PathBuf::from(service_account_path);
         if res.exists() {
@@ -43,7 +50,7 @@ fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn std::
     }
 }
 
-async fn load_service_account(
+pub async fn load_service_account(
     credentials_path: &Path,
 ) -> Result<ClientConfig, Box<dyn std::error::Error>> {
     let credentials_file = match CredentialsFile::new_from_file(
@@ -54,7 +61,8 @@ async fn load_service_account(
         Ok(cred) => cred,
         Err(_) => return Err("Service account file not found".into()),
     };
-    let config = ClientConfig::default().with_credentials(credentials_file)
+    let config = ClientConfig::default()
+        .with_credentials(credentials_file)
         .await
         .unwrap();
     Ok(config)

@@ -69,7 +69,11 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
             .interact()
             .unwrap_or(false);
         if !modify {
-            println!("Keeping existing config. Exiting.");
+            println!("Keeping existing config.");
+            match load_config(Some(target_scope)) {
+                Ok((config, _)) => test_config(&config),
+                Err(e) => eprintln!("Failed to load config: {e}"),
+            }
             return;
         }
     }
@@ -253,7 +257,9 @@ fn setup_manifest_storage() -> ManifestStorage {
 fn setup_project() -> Option<String> {
     println!("\n== GCP project ==");
     let project: String = Input::new()
-        .with_prompt("GCP project id (optional, leave blank to use the one from the service account)")
+        .with_prompt(
+            "GCP project id (optional, leave blank to use the one from the service account)",
+        )
         .allow_empty(true)
         .interact_text()
         .unwrap();
@@ -265,7 +271,28 @@ fn setup_project() -> Option<String> {
     }
 }
 
-fn test_config(_config: &AppConfig) {
+fn test_config(config: &AppConfig) {
     println!("\n== Config validation ==");
-    println!("Config validation is not implemented yet.");
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build tokio runtime");
+    rt.block_on(check_service_account(config));
+}
+
+async fn check_service_account(config: &AppConfig) {
+    use colored::Colorize;
+    use std::io::Write;
+    print!("Service account access... ");
+    std::io::stdout().flush().ok();
+    match try_load_service_account(config).await {
+        Ok(()) => println!("{}", "✓".green()),
+        Err(e) => println!("{}\n  {e}", "✗".red()),
+    }
+}
+
+async fn try_load_service_account(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
+    let path = crate::gcp::client::get_service_account_path(config)?;
+    crate::gcp::client::load_service_account(&path).await?;
+    Ok(())
 }

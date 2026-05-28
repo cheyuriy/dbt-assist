@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
 use config::{Config, Environment, File};
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use std::env;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
@@ -27,7 +27,7 @@ pub enum DbtApiConnection {
     NormalProxy {
         proxy_url: String,
         proxy_token: Option<String>,
-    }
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -190,8 +190,7 @@ mod tests {
         }
 
         fn write_config(&self, yaml: &str) {
-            std::fs::write(self.dir.path().join("config.yaml"), yaml)
-                .expect("write config file");
+            std::fs::write(self.dir.path().join("config.yaml"), yaml).expect("write config file");
         }
     }
 
@@ -353,7 +352,10 @@ project: my-project
         let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
-            DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
+            DbtApiConnection::Direct {
+                dbt_api_url,
+                dbt_api_token,
+            } => {
                 assert_eq!(dbt_api_url, "https://api.example.com");
                 assert_eq!(dbt_api_token, "secret-token");
             }
@@ -380,7 +382,10 @@ manifest_storage:
         let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
-            DbtApiConnection::GcpFunctionProxy { endpoint_url, auth_with_service_account } => {
+            DbtApiConnection::GcpFunctionProxy {
+                endpoint_url,
+                auth_with_service_account,
+            } => {
                 assert_eq!(endpoint_url, "https://gcp.example.com/fn");
                 assert!(auth_with_service_account);
             }
@@ -405,9 +410,15 @@ manifest_storage:
         let (config, _) = load_config(None).expect("load config");
 
         match config.dbt_api_connection {
-            DbtApiConnection::NormalProxy { proxy_url, proxy_token } => {
+            DbtApiConnection::NormalProxy {
+                proxy_url,
+                proxy_token,
+            } => {
                 assert_eq!(proxy_url, "https://proxy.example.com");
-                assert!(proxy_token.is_none(), "proxy_token should default to None when omitted");
+                assert!(
+                    proxy_token.is_none(),
+                    "proxy_token should default to None when omitted"
+                );
             }
             _ => panic!("expected NormalProxy variant"),
         }
@@ -456,7 +467,11 @@ manifest_storage:
         let (config, _) = load_config(None).expect("load config");
 
         match config.manifest_storage {
-            ManifestStorage::GCS { bucket, path, test_file } => {
+            ManifestStorage::GCS {
+                bucket,
+                path,
+                test_file,
+            } => {
                 assert_eq!(bucket, "my-bucket");
                 assert_eq!(path, "prefix/manifest");
                 assert_eq!(test_file, "prefix/.healthcheck");
@@ -530,7 +545,10 @@ manifest_storage:
 
         let (loaded, _) = load_config(None).expect("load config");
         match loaded.dbt_api_connection {
-            DbtApiConnection::Direct { dbt_api_url, dbt_api_token } => {
+            DbtApiConnection::Direct {
+                dbt_api_url,
+                dbt_api_token,
+            } => {
                 assert_eq!(dbt_api_url, "https://api.example.com");
                 assert_eq!(dbt_api_token, "tok");
             }
@@ -679,4 +697,3 @@ manifest_storage:
         restore_config_env(prev);
     }
 }
-
