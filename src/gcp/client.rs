@@ -2,6 +2,7 @@ use crate::models::config::AppConfig;
 use google_cloud_storage::client::{
     Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile,
 };
+use google_cloud_storage::http::objects::{download::Range, get::GetObjectRequest};
 use std::path::{Path, PathBuf};
 use std::{env, ops::Deref};
 
@@ -68,6 +69,27 @@ pub async fn load_service_account(
     Ok(config)
 }
 
+/// Downloads the bytes of `object` from `bucket` using the credentials in
+/// `config`. Used to verify GCS bucket access during setup validation.
+pub async fn download_object(
+    config: &AppConfig,
+    bucket: &str,
+    object: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let (client, _project_id) = get_client(config).await?;
+    let data = client
+        .download_object(
+            &GetObjectRequest {
+                bucket: bucket.to_string(),
+                object: object.to_string(),
+                ..Default::default()
+            },
+            &Range::default(),
+        )
+        .await?;
+    Ok(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +108,20 @@ mod tests {
                 "TEST_SERVICE_ACCOUNT_PATH"
             )
         })
+    }
+
+    /// Returns the GCS bucket name for real-download tests, sourced from
+    /// `TEST_GCS_BUCKET` (define it in `.env.test` or the environment).
+    fn test_gcs_bucket() -> String {
+        let _ = dotenvy::from_filename(".env.test");
+        env::var("TEST_GCS_BUCKET").unwrap_or_else(|_| panic!("{} must be set", "TEST_GCS_BUCKET"))
+    }
+
+    /// Returns the object key (path inside the bucket) for real-download tests,
+    /// sourced from `TEST_GCS_OBJECT`.
+    fn test_gcs_object() -> String {
+        let _ = dotenvy::from_filename(".env.test");
+        env::var("TEST_GCS_OBJECT").unwrap_or_else(|_| panic!("{} must be set", "TEST_GCS_OBJECT"))
     }
 
     fn make_config(service_account_path: Option<String>, project: Option<String>) -> AppConfig {
@@ -253,5 +289,30 @@ mod tests {
         let _g = GoogleApplicationCredentialsEnv::unset();
         let config = make_config(None, None);
         assert!(get_client(&config).await.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn download_object_succeeds_for_existing_object() {
+        let _g = GoogleApplicationCredentialsEnv::unset();
+        let config = make_config(Some(test_service_account_path()), None);
+        let bucket = test_gcs_bucket();
+        let object = test_gcs_object();
+
+        download_object(&config, &bucket, &object)
+            .await
+            .expect("download existing object");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn download_object_errors_for_missing_object() {
+        let _g = GoogleApplicationCredentialsEnv::unset();
+        let config = make_config(Some(test_service_account_path()), None);
+        let bucket = test_gcs_bucket();
+
+        let result =
+            download_object(&config, &bucket, "does/not/exist/dbt-assist-missing.json").await;
+        assert!(result.is_err());
     }
 }

@@ -277,17 +277,30 @@ fn test_config(config: &AppConfig) {
         .enable_all()
         .build()
         .expect("build tokio runtime");
-    rt.block_on(check_service_account(config));
+    rt.block_on(async {
+        // The GCS check reuses the service account, so only run it once the
+        // service account itself is known to load.
+        if check_service_account(config).await {
+            check_gcs_access(config).await;
+        }
+    });
 }
 
-async fn check_service_account(config: &AppConfig) {
+/// Prints the service account validation result and returns whether it passed.
+async fn check_service_account(config: &AppConfig) -> bool {
     use colored::Colorize;
     use std::io::Write;
     print!("Service account access... ");
     std::io::stdout().flush().ok();
     match try_load_service_account(config).await {
-        Ok(()) => println!("{}", "✓".green()),
-        Err(e) => println!("{}\n  {e}", "✗".red()),
+        Ok(()) => {
+            println!("{}", "✓".green());
+            true
+        }
+        Err(e) => {
+            println!("{}\n  {e}", "✗".red());
+            false
+        }
     }
 }
 
@@ -295,4 +308,72 @@ async fn try_load_service_account(config: &AppConfig) -> Result<(), Box<dyn std:
     let path = crate::gcp::client::get_service_account_path(config)?;
     crate::gcp::client::load_service_account(&path).await?;
     Ok(())
+}
+
+/// Verifies GCS bucket access by downloading the configured test file. No-op
+/// for local manifest storage, which has nothing to validate against GCS.
+async fn check_gcs_access(config: &AppConfig) {
+    use colored::Colorize;
+    use std::io::Write;
+    let ManifestStorage::GCS {
+        bucket,
+        path,
+        test_file,
+    } = &config.manifest_storage
+    else {
+        return;
+    };
+    print!("GCS bucket access... ");
+    std::io::stdout().flush().ok();
+    let object = join_object_key(path, test_file);
+    match crate::gcp::client::download_object(config, bucket, &object).await {
+        Ok(_) => println!("{}", "✓".green()),
+        Err(e) => println!("{}\n  {e}", "✗".red()),
+    }
+}
+
+/// Joins the manifest `path` and `test_file` into a single GCS object key,
+/// collapsing redundant slashes and handling an empty path.
+fn join_object_key(path: &str, test_file: &str) -> String {
+    let path = path.trim_matches('/');
+    let file = test_file.trim_start_matches('/');
+    if path.is_empty() {
+        file.to_string()
+    } else {
+        format!("{path}/{file}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_object_key;
+
+    #[test]
+    fn join_object_key_combines_path_and_file() {
+        assert_eq!(
+            join_object_key("prefix/manifest", "test.json"),
+            "prefix/manifest/test.json"
+        );
+    }
+
+    #[test]
+    fn join_object_key_trims_trailing_slash_on_path() {
+        assert_eq!(
+            join_object_key("prefix/manifest/", "test.json"),
+            "prefix/manifest/test.json"
+        );
+    }
+
+    #[test]
+    fn join_object_key_trims_leading_slash_on_file() {
+        assert_eq!(
+            join_object_key("prefix/manifest", "/test.json"),
+            "prefix/manifest/test.json"
+        );
+    }
+
+    #[test]
+    fn join_object_key_handles_empty_path() {
+        assert_eq!(join_object_key("", "test.json"), "test.json");
+    }
 }
