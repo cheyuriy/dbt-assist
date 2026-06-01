@@ -273,17 +273,22 @@ fn setup_project() -> Option<String> {
 
 fn test_config(config: &AppConfig) {
     println!("\n== Config validation ==");
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("build tokio runtime");
-    rt.block_on(async {
-        // The GCS check reuses the service account, so only run it once the
-        // service account itself is known to load.
-        if check_service_account(config).await {
-            check_gcs_access(config).await;
+    match &config.manifest_storage {
+        ManifestStorage::Local { .. } => check_local_access(config),
+        ManifestStorage::GCS { .. } => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime");
+            rt.block_on(async {
+                // The GCS check reuses the service account, so only run it once
+                // the service account itself is known to load.
+                if check_service_account(config).await {
+                    check_gcs_access(config).await;
+                }
+            });
         }
-    });
+    }
 }
 
 /// Prints the service account validation result and returns whether it passed.
@@ -332,6 +337,36 @@ async fn check_gcs_access(config: &AppConfig) {
     }
 }
 
+/// Verifies the local manifest directory exists and is readable. No-op for GCS
+/// manifest storage. Does not require the service account.
+fn check_local_access(config: &AppConfig) {
+    use colored::Colorize;
+    use std::io::Write;
+    let ManifestStorage::Local { path } = &config.manifest_storage else {
+        return;
+    };
+    print!("Local manifest directory access... ");
+    std::io::stdout().flush().ok();
+    match verify_local_dir(path) {
+        Ok(()) => println!("{}", "✓".green()),
+        Err(e) => println!("{}\n  {e}", "✗".red()),
+    }
+}
+
+/// Confirms `path` exists, is a directory, and can be read. Reading the
+/// directory entries is what actually exercises read permission.
+fn verify_local_dir(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = crate::util::expand_tilde(path);
+    if !dir.exists() {
+        return Err(format!("Directory not found: {path}").into());
+    }
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {path}").into());
+    }
+    std::fs::read_dir(&dir)?; // surfaces permission errors as the `?` error
+    Ok(())
+}
+
 /// Joins the manifest `path` and `test_file` into a single GCS object key,
 /// collapsing redundant slashes and handling an empty path.
 fn join_object_key(path: &str, test_file: &str) -> String {
@@ -346,7 +381,26 @@ fn join_object_key(path: &str, test_file: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::join_object_key;
+    use super::{join_object_key, verify_local_dir};
+
+    #[test]
+    fn verify_local_dir_accepts_existing_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        assert!(verify_local_dir(dir.path().to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn verify_local_dir_rejects_missing_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        assert!(verify_local_dir(missing.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn verify_local_dir_rejects_a_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(verify_local_dir(file.path().to_str().unwrap()).is_err());
+    }
 
     #[test]
     fn join_object_key_combines_path_and_file() {
