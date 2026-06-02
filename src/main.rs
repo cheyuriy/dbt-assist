@@ -1,15 +1,21 @@
+mod api;
 mod cli;
+mod commands;
+mod gcp;
+mod models;
+mod util;
+mod verbose;
 
 use clap::Parser;
 use cli::CLI;
 
 fn main() {
     let cli = CLI::parse();
+    verbose::set_verbose(cli.verbose);
 
     match cli.command {
-        cli::Commands::Setup => {
-            println!("Setting up...");
-            // Add your setup logic here
+        cli::Commands::Setup { test_only, scope } => {
+            crate::commands::setup(test_only, scope.map(Into::into));
         }
         cli::Commands::Init => {
             println!("Initializing...");
