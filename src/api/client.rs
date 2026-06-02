@@ -1,12 +1,18 @@
-// The API client is defined here but not yet wired into the commands; that
-// happens in a follow-up step. Suppress dead-code warnings until then.
-#![allow(dead_code)]
-
 use crate::models::config::{AppConfig, DbtApiConnection};
 
 use super::direct::DirectClient;
 use super::gcp_function_proxy::GcpFunctionProxyClient;
 use super::normal_proxy::NormalProxyClient;
+
+/// Treats a `200 OK` response as success for a ping; any other status is an
+/// error. Shared by the connectors' `ping` implementations.
+pub(crate) fn check_ping_ok(resp: reqwest::Response) -> Result<(), Box<dyn std::error::Error>> {
+    if resp.status() == reqwest::StatusCode::OK {
+        Ok(())
+    } else {
+        Err(format!("ping failed with status {}", resp.status()).into())
+    }
+}
 
 /// Generic interface to the dbt API, regardless of how we reach it (directly,
 /// via a plain proxy, or via a GCP Cloud Function proxy).
@@ -14,6 +20,9 @@ use super::normal_proxy::NormalProxyClient;
 /// Return types are intentionally minimal for now (opaque ids/status as
 /// `String`); they will be replaced with real domain types once the methods
 /// are implemented.
+// Only `ping` is wired up so far; the other four methods are still stubs and
+// not yet called. Remove this allow as they get implemented and used.
+#[allow(dead_code)]
 pub trait DbtApiClient {
     /// Connectivity/health check against the API (or proxy).
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>>;

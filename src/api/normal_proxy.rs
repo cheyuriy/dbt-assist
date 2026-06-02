@@ -1,8 +1,4 @@
-// Stub implementation; fields are populated but not yet read until the methods
-// are implemented in a follow-up step.
-#![allow(dead_code)]
-
-use super::client::DbtApiClient;
+use super::client::{DbtApiClient, check_ping_ok};
 
 /// Plain proxy connection: requests go to the user's proxy `url`. If `token` is
 /// set it is sent as `Authorization: ApiKey <token>`; otherwise no auth header
@@ -21,7 +17,13 @@ impl NormalProxyClient {
 
 impl DbtApiClient for NormalProxyClient {
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+        let url = format!("{}/ping", self.url.trim_end_matches('/'));
+        let mut request = self.http.get(url);
+        if let Some(token) = &self.token {
+            request = request.header(reqwest::header::AUTHORIZATION, format!("ApiKey {token}"));
+        }
+        let resp = request.send().await?;
+        check_ping_ok(resp)
     }
 
     async fn get_runs_queue(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {

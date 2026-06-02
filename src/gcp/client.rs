@@ -32,7 +32,18 @@ pub async fn get_client(
 }
 
 pub fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Some(service_account_path) = &config.service_account_path {
+    resolve_service_account_path(config.service_account_path.as_deref())
+}
+
+/// Resolves a service account key file path: the explicitly `configured` value
+/// (if any) takes priority, otherwise falls back to the
+/// `GOOGLE_APPLICATION_CREDENTIALS` env var. In both cases the path is tilde-
+/// expanded and must exist on disk; an invalid configured path does NOT fall
+/// back to the env var.
+pub fn resolve_service_account_path(
+    configured: Option<&str>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if let Some(service_account_path) = configured {
         let res = crate::util::expand_tilde(service_account_path);
         if res.exists() {
             Ok(res)

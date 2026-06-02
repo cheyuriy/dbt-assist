@@ -273,22 +273,75 @@ fn setup_project() -> Option<String> {
 
 fn test_config(config: &AppConfig) {
     println!("\n== Config validation ==");
-    match &config.manifest_storage {
-        ManifestStorage::Local { .. } => check_local_access(config),
-        ManifestStorage::GCS { .. } => {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("build tokio runtime");
-            rt.block_on(async {
-                // The GCS check reuses the service account, so only run it once
-                // the service account itself is known to load.
-                if check_service_account(config).await {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build tokio runtime");
+    rt.block_on(async {
+        // The service account is needed by GCS manifest storage and by a GCP
+        // Cloud Function proxy that authenticates via the service account.
+        // Validate it once up front and share the result with both checks.
+        let needs_sa = matches!(config.manifest_storage, ManifestStorage::GCS { .. })
+            || matches!(
+                config.dbt_api_connection,
+                DbtApiConnection::GcpFunctionProxy {
+                    auth_with_service_account: true,
+                    ..
+                }
+            );
+        let sa_ok = if needs_sa {
+            check_service_account(config).await
+        } else {
+            true
+        };
+
+        check_dbt_connection(config, sa_ok).await;
+
+        match &config.manifest_storage {
+            ManifestStorage::Local { .. } => check_local_access(config),
+            ManifestStorage::GCS { .. } => {
+                if sa_ok {
                     check_gcs_access(config).await;
                 }
-            });
+            }
         }
+    });
+}
+
+/// Validates the configured dbt API connection with a ping. When the connection
+/// authenticates via the service account, the ping can only work if the service
+/// account itself loaded, so we gate on `sa_ok`.
+async fn check_dbt_connection(config: &AppConfig, sa_ok: bool) {
+    use colored::Colorize;
+    use std::io::Write;
+    print!("dbt API connection... ");
+    std::io::stdout().flush().ok();
+
+    let needs_sa = matches!(
+        config.dbt_api_connection,
+        DbtApiConnection::GcpFunctionProxy {
+            auth_with_service_account: true,
+            ..
+        }
+    );
+    if needs_sa && !sa_ok {
+        println!(
+            "{}\n  skipped: service account validation failed",
+            "✗".red()
+        );
+        return;
     }
+
+    match ping_connection(config).await {
+        Ok(()) => println!("{}", "✓".green()),
+        Err(e) => println!("{}\n  {e}", "✗".red()),
+    }
+}
+
+async fn ping_connection(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::api::client::{DbtApi, DbtApiClient};
+    let api = DbtApi::from_config(config)?;
+    api.ping().await
 }
 
 /// Prints the service account validation result and returns whether it passed.

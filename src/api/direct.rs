@@ -1,8 +1,4 @@
-// Stub implementation; fields are populated but not yet read until the methods
-// are implemented in a follow-up step.
-#![allow(dead_code)]
-
-use super::client::DbtApiClient;
+use super::client::{DbtApiClient, check_ping_ok};
 
 /// Direct connection to the dbt API: requests go to `url` and are authorized
 /// with `token` as a `Bearer` token.
@@ -20,7 +16,9 @@ impl DirectClient {
 
 impl DbtApiClient for DirectClient {
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+        let url = format!("{}/v2/accounts", self.url.trim_end_matches('/'));
+        let resp = self.http.get(url).bearer_auth(&self.token).send().await?;
+        check_ping_ok(resp)
     }
 
     async fn get_runs_queue(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
