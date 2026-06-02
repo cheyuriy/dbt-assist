@@ -2,8 +2,10 @@ use crate::models::config::{
     AppConfig, ConfigScope, DbtApiConnection, ManifestStorage, config_dir, load_config, save_config,
 };
 use crate::vprintln;
+use colored::Colorize;
 use dialoguer::{Confirm, Input, Select};
 use std::env;
+use std::io::Write;
 
 pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     vprintln!("Verbose mode enabled");
@@ -11,7 +13,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     let (disc_path, disc_scope) = match config_dir(None) {
         Ok(resolved) => resolved,
         Err(e) => {
-            eprintln!("Failed to resolve config directory: {e}");
+            eprintln!(
+                "{} Could not resolve config directory: {e}",
+                "error:".red().bold()
+            );
             return;
         }
     };
@@ -30,7 +35,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     let (target_path, _) = match config_dir(Some(target_scope)) {
         Ok(resolved) => resolved,
         Err(e) => {
-            eprintln!("Failed to resolve {target_scope} config directory: {e}");
+            eprintln!(
+                "{} Could not resolve {target_scope} config directory: {e}",
+                "error:".red().bold()
+            );
             return;
         }
     };
@@ -38,29 +46,33 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     let target_exists = target_yaml.exists();
 
     if test_only {
+        vprintln!("Test-only mode: validating existing config without modifying it");
         if !target_exists {
             eprintln!(
-                "No config found at {}. Run `dbt-assist setup` first.",
-                target_yaml.display()
+                "{} No config at {}. Run `dbt-assist setup` first.",
+                "error:".red().bold(),
+                target_yaml.display().to_string().cyan()
             );
             return;
         }
-        println!("Using {target_scope} config at {}", target_yaml.display());
+        println!(
+            "Testing {} config at {}",
+            target_scope.to_string().bold(),
+            target_yaml.display().to_string().cyan()
+        );
         match load_config(Some(target_scope)) {
             Ok((config, _)) => test_config(&config),
-            Err(e) => eprintln!("Failed to load config: {e}"),
+            Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
         }
         return;
     }
 
-    if target_exists {
-        println!("Using {target_scope} config at {}", target_yaml.display());
-    } else {
-        println!(
-            "Creating {target_scope} config at {}",
-            target_yaml.display()
-        );
-    }
+    let verb = if target_exists { "Using" } else { "Creating" };
+    println!(
+        "{verb} {} config at {}",
+        target_scope.to_string().bold(),
+        target_yaml.display().to_string().cyan()
+    );
 
     if target_exists {
         let modify = Confirm::new()
@@ -69,10 +81,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
             .interact()
             .unwrap_or(false);
         if !modify {
-            println!("Keeping existing config.");
+            println!("{}", "Keeping existing config.".dimmed());
             match load_config(Some(target_scope)) {
                 Ok((config, _)) => test_config(&config),
-                Err(e) => eprintln!("Failed to load config: {e}"),
+                Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
             }
             return;
         }
@@ -90,26 +102,29 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         project,
     };
 
+    vprintln!("Saving {target_scope} config to {}", target_yaml.display());
     let saved_scope = match save_config(&config, Some(target_scope)) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Failed to save config: {e}");
+            eprintln!("{} Could not save config: {e}", "error:".red().bold());
             return;
         }
     };
     println!(
-        "Setup complete. {saved_scope} config saved to {}.",
-        target_yaml.display()
+        "{} {} config saved to {}",
+        "✓".green().bold(),
+        saved_scope.to_string().bold(),
+        target_yaml.display().to_string().cyan()
     );
 
     test_config(&config);
 }
 
 fn ask_user_for_scope() -> ConfigScope {
-    println!("\n== Config scope ==");
-    let options = ["Local (./.dbt-assist/)", "Global (user config directory)"];
+    println!("\n{}", "› Config scope".bold().cyan());
+    let options = ["Local (./.dbt-assist/)", "Global (user config dir)"];
     let choice = Select::new()
-        .with_prompt("Which config scope to create?")
+        .with_prompt("Which scope?")
         .items(options)
         .default(0)
         .interact()
@@ -122,7 +137,7 @@ fn ask_user_for_scope() -> ConfigScope {
 }
 
 fn setup_service_account() -> Option<String> {
-    println!("\n== Service account ==");
+    println!("\n{}", "› Service account".bold().cyan());
     if let Ok(env_path) = env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         let use_env = Confirm::new()
             .with_prompt(format!(
@@ -144,7 +159,7 @@ fn setup_service_account() -> Option<String> {
 }
 
 fn setup_dbt_api_connection() -> DbtApiConnection {
-    println!("\n== dbt API connection ==");
+    println!("\n{}", "› dbt API connection".bold().cyan());
     let options = ["Direct", "Normal proxy", "GCP Cloud Function proxy"];
     let choice = Select::new()
         .with_prompt("Connection type")
@@ -212,7 +227,7 @@ fn setup_dbt_api_connection() -> DbtApiConnection {
 }
 
 fn setup_manifest_storage() -> ManifestStorage {
-    println!("\n== manifest.json storage ==");
+    println!("\n{}", "› manifest.json storage".bold().cyan());
     let options = ["Local", "GCS"];
     let choice = Select::new()
         .with_prompt("Storage type")
@@ -255,11 +270,9 @@ fn setup_manifest_storage() -> ManifestStorage {
 }
 
 fn setup_project() -> Option<String> {
-    println!("\n== GCP project ==");
+    println!("\n{}", "› GCP project".bold().cyan());
     let project: String = Input::new()
-        .with_prompt(
-            "GCP project id (optional, leave blank to use the one from the service account)",
-        )
+        .with_prompt("GCP project ID (optional — defaults to the service account's project)")
         .allow_empty(true)
         .interact_text()
         .unwrap();
@@ -272,7 +285,9 @@ fn setup_project() -> Option<String> {
 }
 
 fn test_config(config: &AppConfig) {
-    println!("\n== Config validation ==");
+    println!("\n{}", "› Config validation".bold().cyan());
+    vprintln!("Starting config validation tests");
+    describe_config(config);
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -308,13 +323,59 @@ fn test_config(config: &AppConfig) {
     });
 }
 
+/// Logs (in verbose mode) the exact config being exercised by the validation
+/// tests: which service account, which kind of manifest storage, and which kind
+/// of dbt API connection.
+fn describe_config(config: &AppConfig) {
+    match &config.service_account_path {
+        Some(path) => vprintln!("  service account: {path}"),
+        None => vprintln!("  service account: <none>"),
+    }
+
+    match &config.manifest_storage {
+        ManifestStorage::Local { path } => {
+            vprintln!("  manifest storage: local ({path})");
+        }
+        ManifestStorage::GCS {
+            bucket,
+            path,
+            test_file,
+        } => {
+            vprintln!(
+                "  manifest storage: gcs (bucket: {bucket}, path: {path}, test file: {test_file})"
+            );
+        }
+    }
+
+    match &config.dbt_api_connection {
+        DbtApiConnection::Direct { dbt_api_url, .. } => {
+            vprintln!("  dbt API connection: direct ({dbt_api_url})");
+        }
+        DbtApiConnection::NormalProxy {
+            proxy_url,
+            proxy_token,
+        } => {
+            vprintln!(
+                "  dbt API connection: normal proxy ({proxy_url}, auth: {})",
+                if proxy_token.is_some() { "yes" } else { "no" }
+            );
+        }
+        DbtApiConnection::GcpFunctionProxy {
+            endpoint_url,
+            auth_with_service_account,
+        } => {
+            vprintln!(
+                "  dbt API connection: gcp cloud function proxy ({endpoint_url}, service account auth: {auth_with_service_account})"
+            );
+        }
+    }
+}
+
 /// Validates the configured dbt API connection with a ping. When the connection
 /// authenticates via the service account, the ping can only work if the service
 /// account itself loaded, so we gate on `sa_ok`.
 async fn check_dbt_connection(config: &AppConfig, sa_ok: bool) {
-    use colored::Colorize;
-    use std::io::Write;
-    print!("dbt API connection... ");
+    print!("  dbt API ... ");
     std::io::stdout().flush().ok();
 
     let needs_sa = matches!(
@@ -326,15 +387,16 @@ async fn check_dbt_connection(config: &AppConfig, sa_ok: bool) {
     );
     if needs_sa && !sa_ok {
         println!(
-            "{}\n  skipped: service account validation failed",
-            "✗".red()
+            "{}\n    {}",
+            "skipped".yellow(),
+            "service account check failed".dimmed()
         );
         return;
     }
 
     match ping_connection(config).await {
-        Ok(()) => println!("{}", "✓".green()),
-        Err(e) => println!("{}\n  {e}", "✗".red()),
+        Ok(()) => println!("{}", "✓".green().bold()),
+        Err(e) => println!("{}\n    {}", "✗".red().bold(), e.to_string().red()),
     }
 }
 
@@ -346,17 +408,15 @@ async fn ping_connection(config: &AppConfig) -> Result<(), Box<dyn std::error::E
 
 /// Prints the service account validation result and returns whether it passed.
 async fn check_service_account(config: &AppConfig) -> bool {
-    use colored::Colorize;
-    use std::io::Write;
-    print!("Service account access... ");
+    print!("  Service account ... ");
     std::io::stdout().flush().ok();
     match try_load_service_account(config).await {
         Ok(()) => {
-            println!("{}", "✓".green());
+            println!("{}", "✓".green().bold());
             true
         }
         Err(e) => {
-            println!("{}\n  {e}", "✗".red());
+            println!("{}\n    {}", "✗".red().bold(), e.to_string().red());
             false
         }
     }
@@ -371,8 +431,6 @@ async fn try_load_service_account(config: &AppConfig) -> Result<(), Box<dyn std:
 /// Verifies GCS bucket access by downloading the configured test file. No-op
 /// for local manifest storage, which has nothing to validate against GCS.
 async fn check_gcs_access(config: &AppConfig) {
-    use colored::Colorize;
-    use std::io::Write;
     let ManifestStorage::GCS {
         bucket,
         path,
@@ -381,28 +439,26 @@ async fn check_gcs_access(config: &AppConfig) {
     else {
         return;
     };
-    print!("GCS bucket access... ");
+    print!("  GCS bucket ... ");
     std::io::stdout().flush().ok();
     let object = join_object_key(path, test_file);
     match crate::gcp::client::download_object(config, bucket, &object).await {
-        Ok(_) => println!("{}", "✓".green()),
-        Err(e) => println!("{}\n  {e}", "✗".red()),
+        Ok(_) => println!("{}", "✓".green().bold()),
+        Err(e) => println!("{}\n    {}", "✗".red().bold(), e.to_string().red()),
     }
 }
 
 /// Verifies the local manifest directory exists and is readable. No-op for GCS
 /// manifest storage. Does not require the service account.
 fn check_local_access(config: &AppConfig) {
-    use colored::Colorize;
-    use std::io::Write;
     let ManifestStorage::Local { path } = &config.manifest_storage else {
         return;
     };
-    print!("Local manifest directory access... ");
+    print!("  Local manifest dir ... ");
     std::io::stdout().flush().ok();
     match verify_local_dir(path) {
-        Ok(()) => println!("{}", "✓".green()),
-        Err(e) => println!("{}\n  {e}", "✗".red()),
+        Ok(()) => println!("{}", "✓".green().bold()),
+        Err(e) => println!("{}\n    {}", "✗".red().bold(), e.to_string().red()),
     }
 }
 
