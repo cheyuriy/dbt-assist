@@ -130,3 +130,77 @@ impl DbtApiClient for DbtApi {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::config::ManifestStorage;
+    use httpmock::MockServer;
+
+    fn config_with(connection: DbtApiConnection) -> AppConfig {
+        AppConfig {
+            dbt_api_connection: connection,
+            manifest_storage: ManifestStorage::Local {
+                path: "/var/manifest".to_string(),
+            },
+            service_account_path: None,
+            project: None,
+        }
+    }
+
+    #[test]
+    fn from_config_builds_direct_variant() {
+        let api = DbtApi::from_config(&config_with(DbtApiConnection::Direct {
+            dbt_api_url: "https://api.example.com".to_string(),
+            dbt_api_token: "tok".to_string(),
+        }))
+        .expect("build api");
+        assert!(matches!(api, DbtApi::Direct(_)));
+    }
+
+    #[test]
+    fn from_config_builds_normal_proxy_variant() {
+        let api = DbtApi::from_config(&config_with(DbtApiConnection::NormalProxy {
+            proxy_url: "https://proxy.example.com".to_string(),
+            proxy_token: None,
+        }))
+        .expect("build api");
+        assert!(matches!(api, DbtApi::NormalProxy(_)));
+    }
+
+    #[test]
+    fn from_config_builds_gcp_function_proxy_variant() {
+        let api = DbtApi::from_config(&config_with(DbtApiConnection::GcpFunctionProxy {
+            endpoint_url: "https://fn.example.com".to_string(),
+            auth_with_service_account: false,
+        }))
+        .expect("build api");
+        assert!(matches!(api, DbtApi::GcpFunctionProxy(_)));
+    }
+
+    #[tokio::test]
+    async fn check_ping_ok_accepts_200() {
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.path("/ping");
+                then.status(200);
+            })
+            .await;
+        let resp = reqwest::get(server.url("/ping")).await.expect("request");
+        assert!(check_ping_ok(resp).is_ok());
+    }
+
+    #[tokio::test]
+    async fn check_ping_ok_rejects_non_200() {
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.path("/ping");
+                then.status(404);
+            })
+            .await;
+        let resp = reqwest::get(server.url("/ping")).await.expect("request");
+        assert!(check_ping_ok(resp).is_err());
+    }
+}

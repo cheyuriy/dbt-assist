@@ -37,3 +37,46 @@ impl DbtApiClient for DirectClient {
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use httpmock::{Method::GET, MockServer};
+
+    fn client(server: &MockServer, token: &str) -> DirectClient {
+        DirectClient::new(reqwest::Client::new(), server.base_url(), token.to_string())
+    }
+
+    #[tokio::test]
+    async fn ping_succeeds_on_200() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path("/v2/accounts")
+                    .header("authorization", "Bearer secret-token");
+                then.status(200);
+            })
+            .await;
+
+        let result = client(&server, "secret-token").ping().await;
+
+        assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn ping_errors_on_non_200() {
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/v2/accounts");
+                then.status(401);
+            })
+            .await;
+
+        let result = client(&server, "secret-token").ping().await;
+
+        assert!(result.is_err());
+    }
+}

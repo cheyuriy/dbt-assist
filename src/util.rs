@@ -19,7 +19,10 @@ mod tests {
 
     #[test]
     fn expand_tilde_leaves_plain_paths_unchanged() {
-        assert_eq!(expand_tilde("/var/manifest").to_str(), Some("/var/manifest"));
+        assert_eq!(
+            expand_tilde("/var/manifest").to_str(),
+            Some("/var/manifest")
+        );
         assert_eq!(expand_tilde("relative/dir").to_str(), Some("relative/dir"));
     }
 
@@ -30,7 +33,10 @@ mod tests {
 
     #[test]
     fn expand_tilde_expands_leading_tilde() {
-        let home = directories::UserDirs::new().unwrap().home_dir().to_path_buf();
+        let home = directories::UserDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
         assert_eq!(expand_tilde("~"), home);
         assert_eq!(expand_tilde("~/manifest"), home.join("manifest"));
     }
