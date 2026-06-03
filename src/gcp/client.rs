@@ -4,6 +4,7 @@ use google_cloud_storage::client::{
 };
 use google_cloud_storage::http::objects::{download::Range, get::GetObjectRequest};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use std::{env, ops::Deref};
 
 pub async fn get_client(
@@ -99,6 +100,26 @@ pub async fn download_object(
         )
         .await?;
     Ok(data)
+}
+
+/// Downloads `object` from `bucket` and returns its bytes together with the
+/// object's last-update time (from GCS metadata), if available. Used by the
+/// `manifest` command to refresh the local manifest and report its true age.
+pub async fn download_manifest(
+    config: &AppConfig,
+    bucket: &str,
+    object: &str,
+) -> Result<(Vec<u8>, Option<SystemTime>), Box<dyn std::error::Error>> {
+    let (client, _project_id) = get_client(config).await?;
+    let req = GetObjectRequest {
+        bucket: bucket.to_string(),
+        object: object.to_string(),
+        ..Default::default()
+    };
+    let meta = client.get_object(&req).await?;
+    let bytes = client.download_object(&req, &Range::default()).await?;
+    let updated = meta.updated.map(SystemTime::from);
+    Ok((bytes, updated))
 }
 
 #[cfg(test)]

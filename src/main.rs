@@ -20,9 +20,12 @@ fn main() {
         cli::Commands::Init => {
             crate::commands::init();
         }
-        cli::Commands::Manifest => {
-            println!("Handling manifest...");
-            // Add your manifest logic here
+        cli::Commands::Manifest {
+            scope,
+            project_name,
+            manifest_dir,
+        } => {
+            crate::commands::manifest(scope.map(Into::into), project_name, manifest_dir);
         }
         cli::Commands::Jobs { jobs_subcommands } => {
             match jobs_subcommands {
