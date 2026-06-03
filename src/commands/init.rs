@@ -22,7 +22,7 @@ pub fn init() {
         }
     };
 
-    if !crate::util::is_dbt_project(&cwd) {
+    if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
             "{} `init` must be run from a dbt project directory (no {} found here).",
             "error:".red().bold(),
@@ -284,7 +284,7 @@ fn collect_sub_projects(root: &Path, dir: &Path, found: &mut Vec<PathBuf>) {
         {
             continue;
         }
-        if crate::util::is_dbt_project(&path) && path != root {
+        if crate::utils::is_dbt_project(&path) && path != root {
             found.push(path.clone());
         }
         collect_sub_projects(root, &path, found);

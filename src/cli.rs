@@ -48,7 +48,19 @@ pub enum Commands {
     Init,
 
     /// Refresh local manifest.json in current project to allow using `defer` in dbt
-    Manifest,
+    Manifest {
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Override the dbt project name (defaults to `name:` in dbt_project.yml).
+        #[arg(long)]
+        project_name: Option<String>,
+
+        /// Directory to store manifest.json (default: .manifest).
+        #[arg(long)]
+        manifest_dir: Option<String>,
+    },
 
     /// Run jobs in the production environment
     Jobs {

@@ -465,7 +465,7 @@ fn check_local_access(config: &AppConfig) {
 /// Confirms `path` exists, is a directory, and can be read. Reading the
 /// directory entries is what actually exercises read permission.
 fn verify_local_dir(path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = crate::util::expand_tilde(path);
+    let dir = crate::utils::expand_tilde(path);
     if !dir.exists() {
         return Err(format!("Directory not found: {path}").into());
     }
