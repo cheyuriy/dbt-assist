@@ -1,3 +1,4 @@
+pub mod alias;
 mod init;
 mod manifest;
 mod setup;
