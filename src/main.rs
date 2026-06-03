@@ -18,8 +18,7 @@ fn main() {
             crate::commands::setup(test_only, scope.map(Into::into));
         }
         cli::Commands::Init => {
-            println!("Initializing...");
-            // Add your initialization logic here
+            crate::commands::init();
         }
         cli::Commands::Manifest => {
             println!("Handling manifest...");

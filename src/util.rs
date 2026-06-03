@@ -1,4 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Returns true if `dir` is the root of a dbt project, i.e. it directly
+/// contains a `dbt_project.yml` file.
+pub fn is_dbt_project(dir: &Path) -> bool {
+    dir.join("dbt_project.yml").is_file()
+}
 
 /// Expands a leading `~` (or `~/...`) to the user's home directory. Paths
 /// without a leading tilde, or a `~user` form we can't resolve, are returned
@@ -15,7 +21,15 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::expand_tilde;
+    use super::{expand_tilde, is_dbt_project};
+
+    #[test]
+    fn is_dbt_project_detects_dbt_project_yml() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_dbt_project(dir.path()));
+        std::fs::write(dir.path().join("dbt_project.yml"), "name: demo\n").unwrap();
+        assert!(is_dbt_project(dir.path()));
+    }
 
     #[test]
     fn expand_tilde_leaves_plain_paths_unchanged() {
