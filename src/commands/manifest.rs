@@ -28,7 +28,7 @@ pub fn manifest(
         }
     };
 
-    if !crate::util::is_dbt_project(&cwd) {
+    if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
             "{} `manifest` must be run from a dbt project directory (no {} found here).",
             "error:".red().bold(),
@@ -98,7 +98,7 @@ pub fn manifest(
 /// Copies `<path>/manifest.json` to `dest`, returning the source's last-modified
 /// time (captured before the copy) so its age can be reported.
 fn copy_local(path: &str, dest: &Path) -> Result<Option<SystemTime>, Box<dyn std::error::Error>> {
-    let src = crate::util::expand_tilde(path).join("manifest.json");
+    let src = crate::utils::expand_tilde(path).join("manifest.json");
     if !src.is_file() {
         return Err(format!("Manifest not found at {}", src.display()).into());
     }
@@ -134,7 +134,7 @@ fn resolve_project_name(
     if let Some(name) = override_ {
         return Ok(name.to_string());
     }
-    crate::util::read_project_name(cwd).ok_or_else(|| {
+    crate::utils::read_project_name(cwd).ok_or_else(|| {
         "Could not determine project name; pass --project-name or set `name` in dbt_project.yml"
             .into()
     })

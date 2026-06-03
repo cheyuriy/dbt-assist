@@ -45,14 +45,14 @@ pub fn resolve_service_account_path(
     configured: Option<&str>,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(service_account_path) = configured {
-        let res = crate::util::expand_tilde(service_account_path);
+        let res = crate::utils::expand_tilde(service_account_path);
         if res.exists() {
             Ok(res)
         } else {
             Err("Service account file not found".into())
         }
     } else if let Ok(env_path) = env::var("GOOGLE_APPLICATION_CREDENTIALS") {
-        let res = crate::util::expand_tilde(&env_path);
+        let res = crate::utils::expand_tilde(&env_path);
         if res.exists() {
             Ok(res)
         } else {

@@ -3,7 +3,7 @@ mod cli;
 mod commands;
 mod gcp;
 mod models;
-mod util;
+mod utils;
 mod verbose;
 
 use clap::Parser;
