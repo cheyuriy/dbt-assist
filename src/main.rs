@@ -55,22 +55,27 @@ fn main() {
                 }
             }
         }
-        cli::Commands::Alias { alias_subcommands } => {
-            match alias_subcommands {
-                cli::AliasSubcommands::List => {
-                    println!("Listing aliases...");
-                    // Add your alias listing logic here
-                }
-                cli::AliasSubcommands::Add => {
-                    println!("Adding alias...");
-                    // Add your alias adding logic here
-                }
-                cli::AliasSubcommands::Remove => {
-                    println!("Removing alias...");
-                    // Add your alias removing logic here
-                }
+        cli::Commands::Alias { alias_subcommands } => match alias_subcommands {
+            cli::AliasSubcommands::List {
+                predefined,
+                user,
+                project,
+            } => {
+                crate::commands::alias::list(predefined, user, project);
             }
-        }
+            cli::AliasSubcommands::Add {
+                name,
+                target,
+                select,
+                exclude,
+                full_refresh,
+            } => {
+                crate::commands::alias::add(name, target.into(), select, exclude, full_refresh);
+            }
+            cli::AliasSubcommands::Remove { name, source } => {
+                crate::commands::alias::remove(name, source.map(Into::into));
+            }
+        },
         cli::Commands::Templates {
             templates_subcommands,
         } => {

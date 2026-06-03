@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::models::alias::AliasSource;
 use crate::models::config::ConfigScope;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -13,6 +14,23 @@ impl From<ScopeArg> for ConfigScope {
         match value {
             ScopeArg::Local => ConfigScope::Local,
             ScopeArg::Global => ConfigScope::Global,
+        }
+    }
+}
+
+/// Writable alias targets exposed on the CLI (predefined aliases are bundled
+/// and cannot be written).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum AliasTarget {
+    User,
+    Project,
+}
+
+impl From<AliasTarget> for AliasSource {
+    fn from(value: AliasTarget) -> Self {
+        match value {
+            AliasTarget::User => AliasSource::User,
+            AliasTarget::Project => AliasSource::Project,
         }
     }
 }
@@ -98,14 +116,55 @@ pub enum JobsSubcommands {
 
 #[derive(Subcommand)]
 pub enum AliasSubcommands {
-    /// List all configured aliases
-    List,
+    /// List all configured aliases. With no flag, shows predefined, user, and
+    /// project aliases; pass one or more flags to narrow the list.
+    List {
+        /// Show bundled, predefined aliases.
+        #[arg(long)]
+        predefined: bool,
 
-    /// Add a new alias
-    Add,
+        /// Show user aliases (global config directory).
+        #[arg(long)]
+        user: bool,
 
-    /// Remove an existing alias
-    Remove,
+        /// Show project aliases (./.aliases/).
+        #[arg(long)]
+        project: bool,
+    },
+
+    /// Add a new user or project alias
+    Add {
+        /// Name of the alias (becomes the YAML filename).
+        name: String,
+
+        /// Where to store the alias: "user" or "project" (default: project).
+        #[arg(long, value_enum, default_value_t = AliasTarget::Project)]
+        target: AliasTarget,
+
+        /// Value stored under the `select` key (default: "*", i.e. build all).
+        #[arg(long, default_value = "*")]
+        select: String,
+
+        /// Value stored under the `exclude` key (omitted when unset).
+        #[arg(long)]
+        exclude: Option<String>,
+
+        /// Value stored under the `full_refresh` key (omitted when unset; an
+        /// absent value is not the same as `false`).
+        #[arg(long)]
+        full_refresh: Option<bool>,
+    },
+
+    /// Remove an existing user or project alias
+    Remove {
+        /// Name of the alias to remove.
+        name: String,
+
+        /// Source to remove from: "user" or "project". Required when the name
+        /// exists in more than one source.
+        #[arg(long, value_enum)]
+        source: Option<AliasTarget>,
+    },
 }
 
 #[derive(Subcommand)]
