@@ -27,17 +27,28 @@ pub trait DbtApiClient {
     /// Connectivity/health check against the API (or proxy).
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>>;
 
-    /// Returns the queue of runs for our special job (run ids for now).
-    async fn get_runs_queue(&self) -> Result<Vec<String>, Box<dyn std::error::Error>>;
+    /// Returns the queue of runs for the given project.
+    async fn get_runs_queue(
+        &self,
+        project_name: &str,
+    ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>>;
 
     /// Creates a new run of our special job and returns its id.
     async fn create_run(&self) -> Result<String, Box<dyn std::error::Error>>;
 
-    /// Checks the status of a run of our special job.
-    async fn check_run_status(&self, run_id: &str) -> Result<String, Box<dyn std::error::Error>>;
+    /// Checks the status of the run `run_id` within the given project.
+    async fn check_run_status(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>>;
 
-    /// Cancels a run of our special job.
-    async fn cancel_run(&self, run_id: &str) -> Result<(), Box<dyn std::error::Error>>;
+    /// Cancels the run `run_id` within the given project.
+    async fn cancel_run(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 /// Static-dispatch wrapper over the concrete client for each connection type.
@@ -98,11 +109,14 @@ impl DbtApiClient for DbtApi {
         }
     }
 
-    async fn get_runs_queue(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    async fn get_runs_queue(
+        &self,
+        project_name: &str,
+    ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
         match self {
-            DbtApi::Direct(c) => c.get_runs_queue().await,
-            DbtApi::NormalProxy(c) => c.get_runs_queue().await,
-            DbtApi::GcpFunctionProxy(c) => c.get_runs_queue().await,
+            DbtApi::Direct(c) => c.get_runs_queue(project_name).await,
+            DbtApi::NormalProxy(c) => c.get_runs_queue(project_name).await,
+            DbtApi::GcpFunctionProxy(c) => c.get_runs_queue(project_name).await,
         }
     }
 
@@ -114,19 +128,27 @@ impl DbtApiClient for DbtApi {
         }
     }
 
-    async fn check_run_status(&self, run_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+    async fn check_run_status(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
         match self {
-            DbtApi::Direct(c) => c.check_run_status(run_id).await,
-            DbtApi::NormalProxy(c) => c.check_run_status(run_id).await,
-            DbtApi::GcpFunctionProxy(c) => c.check_run_status(run_id).await,
+            DbtApi::Direct(c) => c.check_run_status(project_name, run_id).await,
+            DbtApi::NormalProxy(c) => c.check_run_status(project_name, run_id).await,
+            DbtApi::GcpFunctionProxy(c) => c.check_run_status(project_name, run_id).await,
         }
     }
 
-    async fn cancel_run(&self, run_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn cancel_run(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         match self {
-            DbtApi::Direct(c) => c.cancel_run(run_id).await,
-            DbtApi::NormalProxy(c) => c.cancel_run(run_id).await,
-            DbtApi::GcpFunctionProxy(c) => c.cancel_run(run_id).await,
+            DbtApi::Direct(c) => c.cancel_run(project_name, run_id).await,
+            DbtApi::NormalProxy(c) => c.cancel_run(project_name, run_id).await,
+            DbtApi::GcpFunctionProxy(c) => c.cancel_run(project_name, run_id).await,
         }
     }
 }

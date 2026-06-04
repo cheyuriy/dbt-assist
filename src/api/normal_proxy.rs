@@ -26,7 +26,10 @@ impl DbtApiClient for NormalProxyClient {
         check_ping_ok(resp)
     }
 
-    async fn get_runs_queue(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    async fn get_runs_queue(
+        &self,
+        _project_name: &str,
+    ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
         todo!()
     }
 
@@ -34,11 +37,19 @@ impl DbtApiClient for NormalProxyClient {
         todo!()
     }
 
-    async fn check_run_status(&self, _run_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+    async fn check_run_status(
+        &self,
+        _project_name: &str,
+        _run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
         todo!()
     }
 
-    async fn cancel_run(&self, _run_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn cancel_run(
+        &self,
+        _project_name: &str,
+        _run_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         todo!()
     }
 }
