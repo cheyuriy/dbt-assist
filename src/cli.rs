@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::models::alias::AliasSource;
 use crate::models::config::ConfigScope;
+use crate::models::template::TemplateSource;
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum ScopeArg {
@@ -31,6 +32,25 @@ impl From<AliasTarget> for AliasSource {
         match value {
             AliasTarget::User => AliasSource::User,
             AliasTarget::Project => AliasSource::Project,
+        }
+    }
+}
+
+/// Template sources selectable on the CLI (all three; predefined templates are
+/// readable but bundled and immutable).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum TemplateSourceArg {
+    Predefined,
+    User,
+    Project,
+}
+
+impl From<TemplateSourceArg> for TemplateSource {
+    fn from(value: TemplateSourceArg) -> Self {
+        match value {
+            TemplateSourceArg::Predefined => TemplateSource::Predefined,
+            TemplateSourceArg::User => TemplateSource::User,
+            TemplateSourceArg::Project => TemplateSource::Project,
         }
     }
 }
@@ -181,9 +201,41 @@ pub enum RunsSubcommands {
 
 #[derive(Subcommand)]
 pub enum TemplatesSubcommands {
-    /// List available templates
-    List,
+    /// List available templates. With no flag, shows predefined, user, and
+    /// project templates; pass one or more flags to narrow the list.
+    List {
+        /// Show bundled, predefined templates.
+        #[arg(long)]
+        predefined: bool,
 
-    /// Use a template to create a new model
-    Build,
+        /// Show user templates (global config directory).
+        #[arg(long)]
+        user: bool,
+
+        /// Show project templates (./.templates/).
+        #[arg(long)]
+        project: bool,
+    },
+
+    /// Show a template's documentation and its output-path expression
+    Docs {
+        /// Name of the template.
+        name: String,
+
+        /// Source to read from: required when the name exists in more than one
+        /// source.
+        #[arg(long, value_enum)]
+        source: Option<TemplateSourceArg>,
+    },
+
+    /// Render a template into a dbt model file
+    ///
+    /// Pass the template name followed by any number of `--key value` (or
+    /// `--key=value`) variables. The reserved flags `--source <src>` and
+    /// `--output <path>` may appear anywhere among the arguments.
+    Build {
+        /// Template name plus `--key value` variables and reserved flags.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+        args: Vec<String>,
+    },
 }

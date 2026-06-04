@@ -78,17 +78,20 @@ fn main() {
         },
         cli::Commands::Templates {
             templates_subcommands,
-        } => {
-            match templates_subcommands {
-                cli::TemplatesSubcommands::List => {
-                    println!("Listing templates...");
-                    // Add your template listing logic here
-                }
-                cli::TemplatesSubcommands::Build => {
-                    println!("Building template...");
-                    // Add your template building logic here
-                }
+        } => match templates_subcommands {
+            cli::TemplatesSubcommands::List {
+                predefined,
+                user,
+                project,
+            } => {
+                crate::commands::templates::list(predefined, user, project);
             }
-        }
+            cli::TemplatesSubcommands::Docs { name, source } => {
+                crate::commands::templates::docs(name, source.map(Into::into));
+            }
+            cli::TemplatesSubcommands::Build { args } => {
+                crate::commands::templates::build(args);
+            }
+        },
     }
 }
