@@ -189,14 +189,35 @@ pub enum AliasSubcommands {
 
 #[derive(Subcommand)]
 pub enum RunsSubcommands {
-    /// List all active and queued runs
-    List,
+    /// List active and queued runs for a project
+    Queue {
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Project to query (defaults to `name:` in dbt_project.yml; required
+        /// when not run inside a dbt project).
+        #[arg(long)]
+        project_name: Option<String>,
+    },
 
     /// Check the status and show logs (if any) for a specific run
     Check,
 
     /// Cancel a specific run by ID (running or queued)
-    Cancel,
+    Cancel {
+        /// ID of the run to cancel.
+        run_id: String,
+
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Project the run belongs to (defaults to `name:` in dbt_project.yml;
+        /// required when not run inside a dbt project).
+        #[arg(long)]
+        project_name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

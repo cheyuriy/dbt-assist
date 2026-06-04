@@ -39,22 +39,25 @@ fn main() {
                 }
             }
         }
-        cli::Commands::Runs { runs_subcommands } => {
-            match runs_subcommands {
-                cli::RunsSubcommands::List => {
-                    println!("Listing runs...");
-                    // Add your run listing logic here
-                }
-                cli::RunsSubcommands::Check => {
-                    println!("Checking run...");
-                    // Add your run checking logic here
-                }
-                cli::RunsSubcommands::Cancel => {
-                    println!("Canceling run...");
-                    // Add your run canceling logic here
-                }
+        cli::Commands::Runs { runs_subcommands } => match runs_subcommands {
+            cli::RunsSubcommands::Queue {
+                scope,
+                project_name,
+            } => {
+                crate::commands::runs::queue(scope.map(Into::into), project_name);
             }
-        }
+            cli::RunsSubcommands::Check => {
+                println!("Checking run...");
+                // Add your run checking logic here
+            }
+            cli::RunsSubcommands::Cancel {
+                run_id,
+                scope,
+                project_name,
+            } => {
+                crate::commands::runs::cancel(scope.map(Into::into), project_name, run_id);
+            }
+        },
         cli::Commands::Alias { alias_subcommands } => match alias_subcommands {
             cli::AliasSubcommands::List {
                 predefined,
