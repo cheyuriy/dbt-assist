@@ -36,8 +36,12 @@ pub trait DbtApiClient {
     /// Creates a new run of our special job and returns its id.
     async fn create_run(&self) -> Result<String, Box<dyn std::error::Error>>;
 
-    /// Checks the status of a run of our special job.
-    async fn check_run_status(&self, run_id: &str) -> Result<String, Box<dyn std::error::Error>>;
+    /// Checks the status of the run `run_id` within the given project.
+    async fn check_run_status(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>>;
 
     /// Cancels the run `run_id` within the given project.
     async fn cancel_run(
@@ -124,11 +128,15 @@ impl DbtApiClient for DbtApi {
         }
     }
 
-    async fn check_run_status(&self, run_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+    async fn check_run_status(
+        &self,
+        project_name: &str,
+        run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
         match self {
-            DbtApi::Direct(c) => c.check_run_status(run_id).await,
-            DbtApi::NormalProxy(c) => c.check_run_status(run_id).await,
-            DbtApi::GcpFunctionProxy(c) => c.check_run_status(run_id).await,
+            DbtApi::Direct(c) => c.check_run_status(project_name, run_id).await,
+            DbtApi::NormalProxy(c) => c.check_run_status(project_name, run_id).await,
+            DbtApi::GcpFunctionProxy(c) => c.check_run_status(project_name, run_id).await,
         }
     }
 

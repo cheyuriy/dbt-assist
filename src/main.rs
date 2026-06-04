@@ -46,9 +46,22 @@ fn main() {
             } => {
                 crate::commands::runs::queue(scope.map(Into::into), project_name);
             }
-            cli::RunsSubcommands::Check => {
-                println!("Checking run...");
-                // Add your run checking logic here
+            cli::RunsSubcommands::Check {
+                run_id,
+                scope,
+                project_name,
+                logs_always,
+                debug_logs,
+                save_files,
+            } => {
+                crate::commands::runs::check(
+                    scope.map(Into::into),
+                    project_name,
+                    run_id,
+                    logs_always,
+                    debug_logs,
+                    save_files,
+                );
             }
             cli::RunsSubcommands::Cancel {
                 run_id,

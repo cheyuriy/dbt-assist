@@ -202,7 +202,32 @@ pub enum RunsSubcommands {
     },
 
     /// Check the status and show logs (if any) for a specific run
-    Check,
+    Check {
+        /// ID of the run to check.
+        run_id: String,
+
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Project the run belongs to (defaults to `name:` in dbt_project.yml;
+        /// required when not run inside a dbt project).
+        #[arg(long)]
+        project_name: Option<String>,
+
+        /// Always print logs after the status table, not only on failure.
+        #[arg(long)]
+        logs_always: bool,
+
+        /// Print debug logs instead of normal logs.
+        #[arg(long)]
+        debug_logs: bool,
+
+        /// Save logs (normal and debug) to .logs/<run_id>/. Requires running
+        /// inside a dbt project.
+        #[arg(long)]
+        save_files: bool,
+    },
 
     /// Cancel a specific run by ID (running or queued)
     Cancel {

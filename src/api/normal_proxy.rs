@@ -37,7 +37,11 @@ impl DbtApiClient for NormalProxyClient {
         todo!()
     }
 
-    async fn check_run_status(&self, _run_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+    async fn check_run_status(
+        &self,
+        _project_name: &str,
+        _run_id: &str,
+    ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
         todo!()
     }
 
