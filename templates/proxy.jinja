@@ -1,0 +1,46 @@
+{% if prev_day is defined and prev_day %}
+{% set suffix = "_prev_day" %}
+{% elif prev_prev_day is defined and prev_prev_day %}
+{% set suffix = "_prev_prev_day" %}
+{% elif since_prev_day is defined and since_prev_day %}
+{% set suffix = "_since_prev_day" %}
+{% elif since_prev_prev_day is defined and since_prev_prev_day %}
+{% set suffix = "_since_prev_prev_day" %}
+{% elif wo_curr_day is defined and wo_curr_day %}
+{% set suffix = "_wo_curr_day" %}
+{% else %}
+{% set suffix = "" %}
+{% endif %}
+{% output 'models/proxies/{{dataset}}/{{dataset}}_{{table}}{{suffix}}.sql' %}
+{% docs %}
+Creates a proxy model for provided table.
+
+Mandatory arguments:
+`--dataset` - name of the dataset 
+`--table` - name of the table
+
+Proxy will be created in `models/proxies/{{dataset}}/{{table}}.sql`
+{% enddocs %}
+{% raw %}
+{{
+    config(
+        materialized='ephemeral'
+    )
+}}
+SELECT 
+    *
+FROM {{ source('{% endraw %}{{ dataset }}{% raw %}', '{% endraw %}{{ table }}{% raw %}') }}
+{% endraw %}
+{% if by is defined %}
+{% if prev_day is defined and prev_day %}
+WHERE {{by}} BETWEEN TIMESTAMP(CURRENT_DATE() - INTERVAL 1 DAY) AND TIMESTAMP(CURRENT_DATE())
+{% elif prev_prev_day is defined and prev_prev_day %}
+WHERE {{by}} BETWEEN TIMESTAMP(CURRENT_DATE() - INTERVAL 2 DAY) AND TIMESTAMP(CURRENT_DATE() - INTERVAL 1 DAY)
+{% elif since_prev_day is defined and since_prev_day %}
+WHERE {{by}} >= TIMESTAMP(CURRENT_DATE() - INTERVAL 1 DAY) 
+{% elif since_prev_prev_day is defined and since_prev_prev_day %}
+WHERE {{by}} >= TIMESTAMP(CURRENT_DATE() - INTERVAL 2 DAY) 
+{% elif wo_curr_day is defined and wo_curr_day %}
+WHERE {{by}} < TIMESTAMP(CURRENT_DATE()) 
+{% endif %}
+{% endif %}
