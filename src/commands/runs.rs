@@ -32,7 +32,7 @@ fn resolve_project_name(
 /// Shared setup for the runs subcommands: resolve cwd + project name, load the
 /// config for `scope`, and build the API client. Returns the project name and a
 /// ready client.
-fn prepare(
+pub(crate) fn prepare(
     scope: Option<ConfigScope>,
     project_name: Option<String>,
 ) -> Result<(String, DbtApi), Box<dyn std::error::Error>> {
@@ -47,7 +47,9 @@ fn prepare(
 }
 
 /// Build and run a current-thread tokio runtime for the async body.
-fn block_on<F: std::future::Future>(fut: F) -> Result<F::Output, Box<dyn std::error::Error>> {
+pub(crate) fn block_on<F: std::future::Future>(
+    fut: F,
+) -> Result<F::Output, Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -137,7 +139,7 @@ pub fn cancel(scope: Option<ConfigScope>, project_name: Option<String>, run_id: 
 /// "watch in a loop" command can reuse it: it returns the typed [`RunStatus`]
 /// and prints nothing. Unwraps the runtime layer then the API layer (like
 /// [`queue`]).
-fn fetch_status(
+pub(crate) fn fetch_status(
     scope: Option<ConfigScope>,
     project_name: Option<String>,
     run_id: &str,
@@ -175,7 +177,7 @@ fn step_icons(status: &RunStatus, pick: impl Fn(&crate::models::runs::RunStep) -
 /// Build the run-status table. Glyphs are left uncolored so `comfy_table`
 /// measures column widths correctly. `logs_dir` is the directory logs were
 /// saved to (when `--save-files` was used).
-fn build_status_table(status: &RunStatus, logs_dir: Option<&Path>) -> Table {
+pub(crate) fn build_status_table(status: &RunStatus, logs_dir: Option<&Path>) -> Table {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL).set_header(vec![
         Cell::new("Run status"),
@@ -216,7 +218,7 @@ fn sanitize_for_filename(name: &str) -> String {
 /// Save each step's logs to `.logs/<run_id>/`. Writes `logs_<index>_<name>.log`
 /// for normal logs and `debug_<index>_<name>.log` for debug logs, but only for
 /// steps that actually carry that payload. Returns the created directory.
-fn save_logs(
+pub(crate) fn save_logs(
     cwd: &Path,
     run_id: &str,
     status: &RunStatus,
@@ -243,7 +245,7 @@ fn save_logs(
 /// Print the logs for every step after the table: a bold divider with the
 /// step's index and name, then the chosen log type (or a dimmed placeholder
 /// when that step has no such logs yet).
-fn print_logs(status: &RunStatus, debug: bool) {
+pub(crate) fn print_logs(status: &RunStatus, debug: bool) {
     for step in &status.run_steps {
         println!(
             "\n{}",
