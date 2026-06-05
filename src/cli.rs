@@ -183,6 +183,10 @@ pub enum JobsSubcommands {
         /// (with --watch) Save logs (normal and debug) to .logs/<run_id>/.
         #[arg(long)]
         save_files: bool,
+
+        /// Skip the pre-flight build-impact and queue confirmations.
+        #[arg(long, visible_alias = "force")]
+        yes: bool,
     },
 
     /// Run a one-time job to build models specified by a query in the production environment
@@ -226,6 +230,10 @@ pub enum JobsSubcommands {
         /// (with --watch) Save logs (normal and debug) to .logs/<run_id>/.
         #[arg(long)]
         save_files: bool,
+
+        /// Skip the pre-flight build-impact and queue confirmations.
+        #[arg(long, visible_alias = "force")]
+        yes: bool,
     },
 }
 

@@ -38,6 +38,7 @@ fn main() {
                 logs_always,
                 debug_logs,
                 save_files,
+                yes,
             } => {
                 crate::commands::jobs::run(
                     alias,
@@ -49,6 +50,7 @@ fn main() {
                     logs_always,
                     debug_logs,
                     save_files,
+                    yes,
                 );
             }
             cli::JobsSubcommands::Manual {
@@ -62,6 +64,7 @@ fn main() {
                 logs_always,
                 debug_logs,
                 save_files,
+                yes,
             } => {
                 crate::commands::jobs::manual(
                     select,
@@ -74,6 +77,7 @@ fn main() {
                     logs_always,
                     debug_logs,
                     save_files,
+                    yes,
                 );
             }
         },
