@@ -33,7 +33,14 @@ impl DbtApiClient for NormalProxyClient {
         todo!()
     }
 
-    async fn create_run(&self) -> Result<String, Box<dyn std::error::Error>> {
+    async fn create_run(
+        &self,
+        _project_name: &str,
+        _select: &str,
+        _exclude: Option<&str>,
+        _full_refresh: Option<bool>,
+        _turbo: bool,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
         todo!()
     }
 

@@ -131,7 +131,47 @@ pub enum JobsSubcommands {
     Run,
 
     /// Run a one-time job to build models specified by a query in the production environment
-    Manual,
+    Manual {
+        /// dbt selector for models to build (passed to `dbt build`).
+        select: String,
+
+        /// dbt selector for models to exclude (passed to `dbt build`).
+        #[arg(long)]
+        exclude: Option<String>,
+
+        /// Pass --full-refresh to `dbt build` (an absent value is not the same
+        /// as false).
+        #[arg(long)]
+        full_refresh: Option<bool>,
+
+        /// Override the dbt project name (defaults to `name:` in dbt_project.yml).
+        #[arg(long)]
+        project_name: Option<String>,
+
+        /// Run the build with more threads.
+        #[arg(long)]
+        turbo: bool,
+
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Poll the run to completion, refreshing a live status table.
+        #[arg(long)]
+        watch: bool,
+
+        /// (with --watch) Always print logs at the end, not only on failure.
+        #[arg(long)]
+        logs_always: bool,
+
+        /// (with --watch) Print debug logs instead of normal logs.
+        #[arg(long)]
+        debug_logs: bool,
+
+        /// (with --watch) Save logs (normal and debug) to .logs/<run_id>/.
+        #[arg(long)]
+        save_files: bool,
+    },
 }
 
 #[derive(Subcommand)]

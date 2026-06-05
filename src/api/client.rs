@@ -33,8 +33,16 @@ pub trait DbtApiClient {
         project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>>;
 
-    /// Creates a new run of our special job and returns its id.
-    async fn create_run(&self) -> Result<String, Box<dyn std::error::Error>>;
+    /// Creates a new run of our special job (building the selected models) and
+    /// returns its id.
+    async fn create_run(
+        &self,
+        project_name: &str,
+        select: &str,
+        exclude: Option<&str>,
+        full_refresh: Option<bool>,
+        turbo: bool,
+    ) -> Result<i64, Box<dyn std::error::Error>>;
 
     /// Checks the status of the run `run_id` within the given project.
     async fn check_run_status(
@@ -120,11 +128,27 @@ impl DbtApiClient for DbtApi {
         }
     }
 
-    async fn create_run(&self) -> Result<String, Box<dyn std::error::Error>> {
+    async fn create_run(
+        &self,
+        project_name: &str,
+        select: &str,
+        exclude: Option<&str>,
+        full_refresh: Option<bool>,
+        turbo: bool,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
         match self {
-            DbtApi::Direct(c) => c.create_run().await,
-            DbtApi::NormalProxy(c) => c.create_run().await,
-            DbtApi::GcpFunctionProxy(c) => c.create_run().await,
+            DbtApi::Direct(c) => {
+                c.create_run(project_name, select, exclude, full_refresh, turbo)
+                    .await
+            }
+            DbtApi::NormalProxy(c) => {
+                c.create_run(project_name, select, exclude, full_refresh, turbo)
+                    .await
+            }
+            DbtApi::GcpFunctionProxy(c) => {
+                c.create_run(project_name, select, exclude, full_refresh, turbo)
+                    .await
+            }
         }
     }
 

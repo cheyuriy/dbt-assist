@@ -27,18 +27,37 @@ fn main() {
         } => {
             crate::commands::manifest(scope.map(Into::into), project_name, manifest_dir);
         }
-        cli::Commands::Jobs { jobs_subcommands } => {
-            match jobs_subcommands {
-                cli::JobsSubcommands::Run => {
-                    println!("Running job...");
-                    // Add your job running logic here
-                }
-                cli::JobsSubcommands::Manual => {
-                    println!("Running manual job...");
-                    // Add your manual job logic here
-                }
+        cli::Commands::Jobs { jobs_subcommands } => match jobs_subcommands {
+            cli::JobsSubcommands::Run => {
+                println!("Running job...");
+                // Add your job running logic here
             }
-        }
+            cli::JobsSubcommands::Manual {
+                select,
+                exclude,
+                full_refresh,
+                project_name,
+                turbo,
+                scope,
+                watch,
+                logs_always,
+                debug_logs,
+                save_files,
+            } => {
+                crate::commands::jobs::manual(
+                    select,
+                    exclude,
+                    full_refresh,
+                    project_name,
+                    turbo,
+                    scope.map(Into::into),
+                    watch,
+                    logs_always,
+                    debug_logs,
+                    save_files,
+                );
+            }
+        },
         cli::Commands::Runs { runs_subcommands } => match runs_subcommands {
             cli::RunsSubcommands::Queue {
                 scope,

@@ -1,5 +1,6 @@
 pub mod alias;
 mod init;
+pub mod jobs;
 mod manifest;
 pub mod runs;
 mod setup;
