@@ -28,9 +28,28 @@ fn main() {
             crate::commands::manifest(scope.map(Into::into), project_name, manifest_dir);
         }
         cli::Commands::Jobs { jobs_subcommands } => match jobs_subcommands {
-            cli::JobsSubcommands::Run => {
-                println!("Running job...");
-                // Add your job running logic here
+            cli::JobsSubcommands::Run {
+                alias,
+                source,
+                project_name,
+                turbo,
+                scope,
+                watch,
+                logs_always,
+                debug_logs,
+                save_files,
+            } => {
+                crate::commands::jobs::run(
+                    alias,
+                    source.map(Into::into),
+                    project_name,
+                    turbo,
+                    scope.map(Into::into),
+                    watch,
+                    logs_always,
+                    debug_logs,
+                    save_files,
+                );
             }
             cli::JobsSubcommands::Manual {
                 select,

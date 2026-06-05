@@ -36,6 +36,25 @@ impl From<AliasTarget> for AliasSource {
     }
 }
 
+/// Alias sources selectable on the CLI (all three; predefined aliases are
+/// bundled and immutable but still runnable).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum AliasSourceArg {
+    Predefined,
+    User,
+    Project,
+}
+
+impl From<AliasSourceArg> for AliasSource {
+    fn from(value: AliasSourceArg) -> Self {
+        match value {
+            AliasSourceArg::Predefined => AliasSource::Predefined,
+            AliasSourceArg::User => AliasSource::User,
+            AliasSourceArg::Project => AliasSource::Project,
+        }
+    }
+}
+
 /// Template sources selectable on the CLI (all three; predefined templates are
 /// readable but bundled and immutable).
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -128,7 +147,43 @@ pub enum Commands {
 #[derive(Subcommand)]
 pub enum JobsSubcommands {
     /// Run an existing alias in the production environment
-    Run,
+    Run {
+        /// Name of the alias to run.
+        alias: String,
+
+        /// Source to read the alias from: required only to disambiguate when the
+        /// name exists in more than one source.
+        #[arg(long, value_enum)]
+        source: Option<AliasSourceArg>,
+
+        /// Override the dbt project name (defaults to `name:` in dbt_project.yml).
+        #[arg(long)]
+        project_name: Option<String>,
+
+        /// Run the build with more threads.
+        #[arg(long)]
+        turbo: bool,
+
+        /// Config scope: "local" (./.dbt-assist/) or "global". Omit to auto-detect.
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+
+        /// Poll the run to completion, refreshing a live status table.
+        #[arg(long)]
+        watch: bool,
+
+        /// (with --watch) Always print logs at the end, not only on failure.
+        #[arg(long)]
+        logs_always: bool,
+
+        /// (with --watch) Print debug logs instead of normal logs.
+        #[arg(long)]
+        debug_logs: bool,
+
+        /// (with --watch) Save logs (normal and debug) to .logs/<run_id>/.
+        #[arg(long)]
+        save_files: bool,
+    },
 
     /// Run a one-time job to build models specified by a query in the production environment
     Manual {
