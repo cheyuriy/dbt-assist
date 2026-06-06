@@ -17,6 +17,15 @@ pub enum DbtApiConnection {
     Direct {
         dbt_api_url: String,
         dbt_api_token: String,
+        account_id: i64,
+        dbt_assist_job_name: String,
+        dbt_target_name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        username: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default_threads_num: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        turbo_threads_num: Option<i64>,
     },
 
     GcpFunctionProxy {
@@ -343,6 +352,9 @@ dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
   dbt_api_token: secret-token
+  account_id: 42
+  dbt_assist_job_name: dbt-assist
+  dbt_target_name: prod
 manifest_storage:
   type: local
   path: /var/manifest
@@ -356,9 +368,21 @@ project: my-project
             DbtApiConnection::Direct {
                 dbt_api_url,
                 dbt_api_token,
+                account_id,
+                dbt_assist_job_name,
+                dbt_target_name,
+                username,
+                default_threads_num,
+                turbo_threads_num,
             } => {
                 assert_eq!(dbt_api_url, "https://api.example.com");
                 assert_eq!(dbt_api_token, "secret-token");
+                assert_eq!(account_id, 42);
+                assert_eq!(dbt_assist_job_name, "dbt-assist");
+                assert_eq!(dbt_target_name, "prod");
+                assert_eq!(username, None);
+                assert_eq!(default_threads_num, None);
+                assert_eq!(turbo_threads_num, None);
             }
             _ => panic!("expected Direct variant"),
         }
@@ -436,6 +460,9 @@ dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
   dbt_api_token: tok
+  account_id: 42
+  dbt_assist_job_name: dbt-assist
+  dbt_target_name: prod
 manifest_storage:
   type: local
   path: /var/manifest
@@ -459,6 +486,9 @@ dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
   dbt_api_token: tok
+  account_id: 42
+  dbt_assist_job_name: dbt-assist
+  dbt_target_name: prod
 manifest_storage:
   type: gcs
   bucket: my-bucket
@@ -492,6 +522,9 @@ dbt_api_connection:
   type: direct
   dbt_api_url: https://api.example.com
   dbt_api_token: tok
+  account_id: 42
+  dbt_assist_job_name: dbt-assist
+  dbt_target_name: prod
 manifest_storage:
   type: local
   path: /var/manifest
@@ -534,6 +567,12 @@ manifest_storage:
             dbt_api_connection: DbtApiConnection::Direct {
                 dbt_api_url: "https://api.example.com".to_string(),
                 dbt_api_token: "tok".to_string(),
+                account_id: 42,
+                dbt_assist_job_name: "dbt-assist".to_string(),
+                dbt_target_name: "prod".to_string(),
+                username: None,
+                default_threads_num: None,
+                turbo_threads_num: None,
             },
             manifest_storage: ManifestStorage::Local {
                 path: "/var/manifest".to_string(),
@@ -550,9 +589,16 @@ manifest_storage:
             DbtApiConnection::Direct {
                 dbt_api_url,
                 dbt_api_token,
+                account_id,
+                dbt_assist_job_name,
+                dbt_target_name,
+                ..
             } => {
                 assert_eq!(dbt_api_url, "https://api.example.com");
                 assert_eq!(dbt_api_token, "tok");
+                assert_eq!(account_id, 42);
+                assert_eq!(dbt_assist_job_name, "dbt-assist");
+                assert_eq!(dbt_target_name, "prod");
             }
             _ => panic!("expected Direct variant"),
         }
@@ -568,6 +614,12 @@ manifest_storage:
             dbt_api_connection: DbtApiConnection::Direct {
                 dbt_api_url: "https://api.example.com".to_string(),
                 dbt_api_token: "tok".to_string(),
+                account_id: 42,
+                dbt_assist_job_name: "dbt-assist".to_string(),
+                dbt_target_name: "prod".to_string(),
+                username: None,
+                default_threads_num: None,
+                turbo_threads_num: None,
             },
             manifest_storage: ManifestStorage::Local {
                 path: "/var/manifest".to_string(),

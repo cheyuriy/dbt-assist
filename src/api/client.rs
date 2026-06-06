@@ -71,10 +71,22 @@ impl DbtApi {
             DbtApiConnection::Direct {
                 dbt_api_url,
                 dbt_api_token,
+                account_id,
+                dbt_assist_job_name,
+                dbt_target_name,
+                username,
+                default_threads_num,
+                turbo_threads_num,
             } => DbtApi::Direct(DirectClient::new(
                 http,
                 dbt_api_url.clone(),
                 dbt_api_token.clone(),
+                *account_id,
+                dbt_assist_job_name.clone(),
+                dbt_target_name.clone(),
+                username.clone(),
+                *default_threads_num,
+                *turbo_threads_num,
             )),
 
             DbtApiConnection::NormalProxy {
@@ -194,6 +206,12 @@ mod tests {
         let api = DbtApi::from_config(&config_with(DbtApiConnection::Direct {
             dbt_api_url: "https://api.example.com".to_string(),
             dbt_api_token: "tok".to_string(),
+            account_id: 1,
+            dbt_assist_job_name: "dbt-assist".to_string(),
+            dbt_target_name: "prod".to_string(),
+            username: None,
+            default_threads_num: None,
+            turbo_threads_num: None,
         }))
         .expect("build api");
         assert!(matches!(api, DbtApi::Direct(_)));

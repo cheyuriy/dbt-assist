@@ -178,9 +178,41 @@ fn setup_dbt_api_connection() -> DbtApiConnection {
                 .with_prompt("dbt API token")
                 .interact_text()
                 .unwrap();
+            let account_id: i64 = Input::new()
+                .with_prompt("dbt account ID")
+                .interact_text()
+                .unwrap();
+            let dbt_assist_job_name: String = Input::new()
+                .with_prompt("Name of the dbt-assist job")
+                .interact_text()
+                .unwrap();
+            let dbt_target_name: String = Input::new()
+                .with_prompt("dbt target name")
+                .default("prod".to_string())
+                .interact_text()
+                .unwrap();
+            let username: String = Input::new()
+                .with_prompt("Username to link runs with (optional)")
+                .allow_empty(true)
+                .interact_text()
+                .unwrap();
+            let username = {
+                let trimmed = username.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            };
             DbtApiConnection::Direct {
                 dbt_api_url: dbt_api_url.trim().to_string(),
                 dbt_api_token: dbt_api_token.trim().to_string(),
+                account_id,
+                dbt_assist_job_name: dbt_assist_job_name.trim().to_string(),
+                dbt_target_name: dbt_target_name.trim().to_string(),
+                username,
+                default_threads_num: None,
+                turbo_threads_num: None,
             }
         }
         1 => {
