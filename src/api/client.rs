@@ -79,11 +79,13 @@ impl DbtApi {
 
             DbtApiConnection::NormalProxy {
                 proxy_url,
-                proxy_token,
+                proxy_username,
+                proxy_password,
             } => DbtApi::NormalProxy(NormalProxyClient::new(
                 http,
                 proxy_url.clone(),
-                proxy_token.clone(),
+                proxy_username.clone(),
+                proxy_password.clone(),
             )),
 
             DbtApiConnection::GcpFunctionProxy {
@@ -201,7 +203,8 @@ mod tests {
     fn from_config_builds_normal_proxy_variant() {
         let api = DbtApi::from_config(&config_with(DbtApiConnection::NormalProxy {
             proxy_url: "https://proxy.example.com".to_string(),
-            proxy_token: None,
+            proxy_username: None,
+            proxy_password: None,
         }))
         .expect("build api");
         assert!(matches!(api, DbtApi::NormalProxy(_)));

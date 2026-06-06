@@ -4,11 +4,11 @@ use crate::models::runs::{RunStatus, RunsQueue};
 
 /// How to authorize a request to a proxy. The normal proxy and the GCP Cloud
 /// Function proxy speak the same API and differ *only* here: the normal proxy
-/// optionally sends `Authorization: ApiKey <token>`, the GCP proxy optionally
-/// sends a minted `Bearer <id-token>`, and either may send nothing.
+/// optionally sends HTTP `Basic` auth (username + password), the GCP proxy
+/// optionally sends a minted `Bearer <id-token>`, and either may send nothing.
 pub(crate) enum ProxyAuth {
     None,
-    ApiKey(String),
+    Basic { username: String, password: String },
     Bearer(String),
 }
 
@@ -17,9 +17,7 @@ impl ProxyAuth {
     pub(crate) fn apply(self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         match self {
             ProxyAuth::None => req,
-            ProxyAuth::ApiKey(token) => {
-                req.header(reqwest::header::AUTHORIZATION, format!("ApiKey {token}"))
-            }
+            ProxyAuth::Basic { username, password } => req.basic_auth(username, Some(password)),
             ProxyAuth::Bearer(token) => req.bearer_auth(token),
         }
     }

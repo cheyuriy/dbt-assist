@@ -3,7 +3,7 @@ use crate::models::config::{
 };
 use crate::vprintln;
 use colored::Colorize;
-use dialoguer::{Confirm, Input, Select};
+use dialoguer::{Confirm, Input, Password, Select};
 use std::env;
 use std::io::Write;
 
@@ -193,18 +193,26 @@ fn setup_dbt_api_connection() -> DbtApiConnection {
                 .default(false)
                 .interact()
                 .unwrap_or(false);
-            let proxy_token = if use_auth {
-                let token: String = Input::new()
-                    .with_prompt("Proxy auth token")
+            let (proxy_username, proxy_password) = if use_auth {
+                let username: String = Input::new()
+                    .with_prompt("Proxy username")
                     .interact_text()
                     .unwrap();
-                Some(token.trim().to_string())
+                let password: String = Password::new()
+                    .with_prompt("Proxy password")
+                    .interact()
+                    .unwrap();
+                (
+                    Some(username.trim().to_string()),
+                    Some(password.trim().to_string()),
+                )
             } else {
-                None
+                (None, None)
             };
             DbtApiConnection::NormalProxy {
                 proxy_url: proxy_url.trim().to_string(),
-                proxy_token,
+                proxy_username,
+                proxy_password,
             }
         }
         2 => {
@@ -353,11 +361,16 @@ fn describe_config(config: &AppConfig) {
         }
         DbtApiConnection::NormalProxy {
             proxy_url,
-            proxy_token,
+            proxy_username,
+            proxy_password,
         } => {
             vprintln!(
                 "  dbt API connection: normal proxy ({proxy_url}, auth: {})",
-                if proxy_token.is_some() { "yes" } else { "no" }
+                if proxy_username.is_some() && proxy_password.is_some() {
+                    "yes"
+                } else {
+                    "no"
+                }
             );
         }
         DbtApiConnection::GcpFunctionProxy {

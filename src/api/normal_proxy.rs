@@ -1,26 +1,40 @@
 use super::client::{DbtApiClient, check_ping_ok};
 use super::proxy::{self, ProxyAuth};
 
-/// Plain proxy connection: requests go to the user's proxy `url`. If `token` is
-/// set it is sent as `Authorization: ApiKey <token>`; otherwise no auth header
-/// is used.
+/// Plain proxy connection: requests go to the user's proxy `url`. When both a
+/// `username` and `password` are set they are sent as HTTP `Basic` auth;
+/// otherwise no auth header is used.
 pub struct NormalProxyClient {
     http: reqwest::Client,
     url: String,
-    token: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
 }
 
 impl NormalProxyClient {
-    pub fn new(http: reqwest::Client, url: String, token: Option<String>) -> Self {
-        Self { http, url, token }
+    pub fn new(
+        http: reqwest::Client,
+        url: String,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Self {
+        Self {
+            http,
+            url,
+            username,
+            password,
+        }
     }
 
-    /// The authorization for this proxy: `ApiKey <token>` when a token is set,
-    /// otherwise none.
+    /// The authorization for this proxy: HTTP `Basic` auth when both a username
+    /// and password are set, otherwise none.
     fn auth(&self) -> ProxyAuth {
-        match &self.token {
-            Some(token) => ProxyAuth::ApiKey(token.clone()),
-            None => ProxyAuth::None,
+        match (&self.username, &self.password) {
+            (Some(username), Some(password)) => ProxyAuth::Basic {
+                username: username.clone(),
+                password: password.clone(),
+            },
+            _ => ProxyAuth::None,
         }
     }
 }
@@ -86,12 +100,12 @@ mod tests {
         MockServer,
     };
 
-    fn client(server: &MockServer, token: Option<&str>) -> NormalProxyClient {
-        NormalProxyClient::new(
-            reqwest::Client::new(),
-            server.base_url(),
-            token.map(str::to_string),
-        )
+    fn client(server: &MockServer, credentials: Option<(&str, &str)>) -> NormalProxyClient {
+        let (username, password) = match credentials {
+            Some((u, p)) => (Some(u.to_string()), Some(p.to_string())),
+            None => (None, None),
+        };
+        NormalProxyClient::new(reqwest::Client::new(), server.base_url(), username, password)
     }
 
     /// True when the request carries no `Authorization` header (case-insensitive).
@@ -105,25 +119,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ping_with_token_sends_apikey_header() {
+    async fn ping_with_credentials_sends_basic_header() {
         let server = MockServer::start_async().await;
+        // base64("user:pass") == "dXNlcjpwYXNz"
         let mock = server
             .mock_async(|when, then| {
                 when.method(GET)
                     .path("/ping")
-                    .header("authorization", "ApiKey secret-token");
+                    .header("authorization", "Basic dXNlcjpwYXNz");
                 then.status(200);
             })
             .await;
 
-        let result = client(&server, Some("secret-token")).ping().await;
+        let result = client(&server, Some(("user", "pass"))).ping().await;
 
         assert!(result.is_ok());
         mock.assert_async().await;
     }
 
     #[tokio::test]
-    async fn ping_without_token_sends_no_auth_header() {
+    async fn ping_without_credentials_sends_no_auth_header() {
         let server = MockServer::start_async().await;
         let mock = server
             .mock_async(|when, then| {
@@ -160,7 +175,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path("/runs/manual")
-                    .header("authorization", "ApiKey secret-token")
+                    .header("authorization", "Basic dXNlcjpwYXNz")
                     .json_body(serde_json::json!({
                         "select": "tag:nightly",
                         "project_name": "analytics",
@@ -172,7 +187,7 @@ mod tests {
             })
             .await;
 
-        let result = client(&server, Some("secret-token"))
+        let result = client(&server, Some(("user", "pass")))
             .create_run("analytics", "tag:nightly", Some("model_x"), Some(true), false)
             .await;
 

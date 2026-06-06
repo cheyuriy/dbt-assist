@@ -26,7 +26,8 @@ pub enum DbtApiConnection {
 
     NormalProxy {
         proxy_url: String,
-        proxy_token: Option<String>,
+        proxy_username: Option<String>,
+        proxy_password: Option<String>,
     },
 }
 
@@ -395,7 +396,7 @@ manifest_storage:
 
     #[test]
     #[serial]
-    fn load_normal_proxy_connection_without_token() {
+    fn load_normal_proxy_connection_without_credentials() {
         let env = ConfigDirEnv::new();
         env.write_config(
             r#"
@@ -412,12 +413,13 @@ manifest_storage:
         match config.dbt_api_connection {
             DbtApiConnection::NormalProxy {
                 proxy_url,
-                proxy_token,
+                proxy_username,
+                proxy_password,
             } => {
                 assert_eq!(proxy_url, "https://proxy.example.com");
                 assert!(
-                    proxy_token.is_none(),
-                    "proxy_token should default to None when omitted"
+                    proxy_username.is_none() && proxy_password.is_none(),
+                    "credentials should default to None when omitted"
                 );
             }
             _ => panic!("expected NormalProxy variant"),
