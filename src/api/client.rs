@@ -16,13 +16,6 @@ pub(crate) fn check_ping_ok(resp: reqwest::Response) -> Result<(), Box<dyn std::
 
 /// Generic interface to the dbt API, regardless of how we reach it (directly,
 /// via a plain proxy, or via a GCP Cloud Function proxy).
-///
-/// Return types are intentionally minimal for now (opaque ids/status as
-/// `String`); they will be replaced with real domain types once the methods
-/// are implemented.
-// Only `ping` is wired up so far; the other four methods are still stubs and
-// not yet called. Remove this allow as they get implemented and used.
-#[allow(dead_code)]
 pub trait DbtApiClient {
     /// Connectivity/health check against the API (or proxy).
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>>;
@@ -78,19 +71,33 @@ impl DbtApi {
             DbtApiConnection::Direct {
                 dbt_api_url,
                 dbt_api_token,
+                account_id,
+                dbt_assist_job_name,
+                dbt_target_name,
+                username,
+                default_threads_num,
+                turbo_threads_num,
             } => DbtApi::Direct(DirectClient::new(
                 http,
                 dbt_api_url.clone(),
                 dbt_api_token.clone(),
+                *account_id,
+                dbt_assist_job_name.clone(),
+                dbt_target_name.clone(),
+                username.clone(),
+                *default_threads_num,
+                *turbo_threads_num,
             )),
 
             DbtApiConnection::NormalProxy {
                 proxy_url,
-                proxy_token,
+                proxy_username,
+                proxy_password,
             } => DbtApi::NormalProxy(NormalProxyClient::new(
                 http,
                 proxy_url.clone(),
-                proxy_token.clone(),
+                proxy_username.clone(),
+                proxy_password.clone(),
             )),
 
             DbtApiConnection::GcpFunctionProxy {
@@ -199,6 +206,12 @@ mod tests {
         let api = DbtApi::from_config(&config_with(DbtApiConnection::Direct {
             dbt_api_url: "https://api.example.com".to_string(),
             dbt_api_token: "tok".to_string(),
+            account_id: 1,
+            dbt_assist_job_name: "dbt-assist".to_string(),
+            dbt_target_name: "prod".to_string(),
+            username: None,
+            default_threads_num: None,
+            turbo_threads_num: None,
         }))
         .expect("build api");
         assert!(matches!(api, DbtApi::Direct(_)));
@@ -208,7 +221,8 @@ mod tests {
     fn from_config_builds_normal_proxy_variant() {
         let api = DbtApi::from_config(&config_with(DbtApiConnection::NormalProxy {
             proxy_url: "https://proxy.example.com".to_string(),
-            proxy_token: None,
+            proxy_username: None,
+            proxy_password: None,
         }))
         .expect("build api");
         assert!(matches!(api, DbtApi::NormalProxy(_)));

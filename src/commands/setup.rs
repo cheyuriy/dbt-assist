@@ -3,7 +3,7 @@ use crate::models::config::{
 };
 use crate::vprintln;
 use colored::Colorize;
-use dialoguer::{Confirm, Input, Select};
+use dialoguer::{Confirm, Input, Password, Select};
 use std::env;
 use std::io::Write;
 
@@ -178,9 +178,41 @@ fn setup_dbt_api_connection() -> DbtApiConnection {
                 .with_prompt("dbt API token")
                 .interact_text()
                 .unwrap();
+            let account_id: i64 = Input::new()
+                .with_prompt("dbt account ID")
+                .interact_text()
+                .unwrap();
+            let dbt_assist_job_name: String = Input::new()
+                .with_prompt("Name of the dbt-assist job")
+                .interact_text()
+                .unwrap();
+            let dbt_target_name: String = Input::new()
+                .with_prompt("dbt target name")
+                .default("prod".to_string())
+                .interact_text()
+                .unwrap();
+            let username: String = Input::new()
+                .with_prompt("Username to link runs with (optional)")
+                .allow_empty(true)
+                .interact_text()
+                .unwrap();
+            let username = {
+                let trimmed = username.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            };
             DbtApiConnection::Direct {
                 dbt_api_url: dbt_api_url.trim().to_string(),
                 dbt_api_token: dbt_api_token.trim().to_string(),
+                account_id,
+                dbt_assist_job_name: dbt_assist_job_name.trim().to_string(),
+                dbt_target_name: dbt_target_name.trim().to_string(),
+                username,
+                default_threads_num: None,
+                turbo_threads_num: None,
             }
         }
         1 => {
@@ -193,18 +225,26 @@ fn setup_dbt_api_connection() -> DbtApiConnection {
                 .default(false)
                 .interact()
                 .unwrap_or(false);
-            let proxy_token = if use_auth {
-                let token: String = Input::new()
-                    .with_prompt("Proxy auth token")
+            let (proxy_username, proxy_password) = if use_auth {
+                let username: String = Input::new()
+                    .with_prompt("Proxy username")
                     .interact_text()
                     .unwrap();
-                Some(token.trim().to_string())
+                let password: String = Password::new()
+                    .with_prompt("Proxy password")
+                    .interact()
+                    .unwrap();
+                (
+                    Some(username.trim().to_string()),
+                    Some(password.trim().to_string()),
+                )
             } else {
-                None
+                (None, None)
             };
             DbtApiConnection::NormalProxy {
                 proxy_url: proxy_url.trim().to_string(),
-                proxy_token,
+                proxy_username,
+                proxy_password,
             }
         }
         2 => {
@@ -353,11 +393,16 @@ fn describe_config(config: &AppConfig) {
         }
         DbtApiConnection::NormalProxy {
             proxy_url,
-            proxy_token,
+            proxy_username,
+            proxy_password,
         } => {
             vprintln!(
                 "  dbt API connection: normal proxy ({proxy_url}, auth: {})",
-                if proxy_token.is_some() { "yes" } else { "no" }
+                if proxy_username.is_some() && proxy_password.is_some() {
+                    "yes"
+                } else {
+                    "no"
+                }
             );
         }
         DbtApiConnection::GcpFunctionProxy {

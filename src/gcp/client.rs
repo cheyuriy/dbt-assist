@@ -161,6 +161,12 @@ mod tests {
             dbt_api_connection: DbtApiConnection::Direct {
                 dbt_api_url: "https://api.example.com".to_string(),
                 dbt_api_token: "tok".to_string(),
+                account_id: 42,
+                dbt_assist_job_name: "dbt-assist".to_string(),
+                dbt_target_name: "prod".to_string(),
+                username: None,
+                default_threads_num: None,
+                turbo_threads_num: None,
             },
             manifest_storage: ManifestStorage::Local {
                 path: "/var/manifest".to_string(),
