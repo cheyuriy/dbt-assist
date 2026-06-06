@@ -2,12 +2,13 @@ use google_cloud_storage::client::google_cloud_auth::credentials::CredentialsFil
 use google_cloud_storage::client::google_cloud_auth::idtoken::IdTokenSourceConfig;
 
 use super::client::{DbtApiClient, check_ping_ok};
+use super::proxy::{self, ProxyAuth};
 
 /// GCP Cloud Function proxy connection. Endpoints/request shape match
 /// [`super::normal_proxy::NormalProxyClient`]; the difference is authorization.
 /// When `auth_with_service_account` is set we mint a GCP ID token for the
-/// function (using the service account at `service_account_path`); otherwise the
-/// same `ApiKey` token scheme as the normal proxy applies.
+/// function (using the service account at `service_account_path`) and send it as
+/// a `Bearer` token; otherwise no auth header is sent.
 pub struct GcpFunctionProxyClient {
     http: reqwest::Client,
     endpoint_url: String,
@@ -43,51 +44,67 @@ impl GcpFunctionProxyClient {
             .await?;
         Ok(token_source.token().await?.access_token)
     }
+
+    /// The authorization for this proxy: a minted `Bearer` ID token when
+    /// `auth_with_service_account` is set, otherwise none.
+    async fn auth(&self) -> Result<ProxyAuth, Box<dyn std::error::Error>> {
+        if self.auth_with_service_account {
+            Ok(ProxyAuth::Bearer(self.id_token().await?))
+        } else {
+            Ok(ProxyAuth::None)
+        }
+    }
 }
 
 impl DbtApiClient for GcpFunctionProxyClient {
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{}/ping", self.endpoint_url.trim_end_matches('/'));
-        let mut request = self.http.get(url);
-        if self.auth_with_service_account {
-            request = request.bearer_auth(self.id_token().await?);
-        }
-        let resp = request.send().await?;
+        let resp = self.auth().await?.apply(self.http.get(url)).send().await?;
         check_ping_ok(resp)
     }
 
     async fn get_runs_queue(
         &self,
-        _project_name: &str,
+        project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
-        todo!()
+        proxy::get_runs_queue(&self.http, &self.endpoint_url, self.auth().await?, project_name).await
     }
 
     async fn create_run(
         &self,
-        _project_name: &str,
-        _select: &str,
-        _exclude: Option<&str>,
-        _full_refresh: Option<bool>,
-        _turbo: bool,
+        project_name: &str,
+        select: &str,
+        exclude: Option<&str>,
+        full_refresh: Option<bool>,
+        turbo: bool,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        todo!()
+        proxy::create_run(
+            &self.http,
+            &self.endpoint_url,
+            self.auth().await?,
+            project_name,
+            select,
+            exclude,
+            full_refresh,
+            turbo,
+        )
+        .await
     }
 
     async fn check_run_status(
         &self,
         _project_name: &str,
-        _run_id: &str,
+        run_id: &str,
     ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
-        todo!()
+        proxy::check_run_status(&self.http, &self.endpoint_url, self.auth().await?, run_id).await
     }
 
     async fn cancel_run(
         &self,
         _project_name: &str,
-        _run_id: &str,
+        run_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+        proxy::cancel_run(&self.http, &self.endpoint_url, self.auth().await?, run_id).await
     }
 }
 
