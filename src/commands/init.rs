@@ -10,26 +10,17 @@ use crate::vprintln;
 /// Initialize the current dbt project: scaffold the hidden working directories
 /// dbt-assist relies on and, optionally, wire up local VSCode settings for the
 /// "Power User for dbt" extension (deferral, lineage panel, jinja associations).
-pub fn init() {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+pub fn init() -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} {} must be run from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} must be run from a dbt project directory (no {} found here).",
             "init".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
     // Scaffold the hidden working directories.
@@ -41,17 +32,8 @@ pub fn init() {
         (".dbt-assist", "to store local dbt-assist config"),
     ] {
         let dir = cwd.join(name);
-        match fs::create_dir_all(&dir) {
-            Ok(()) => vprintln!("Created {} ({})", dir.display(), purpose),
-            Err(e) => {
-                eprintln!(
-                    "{} could not create {}: {e}",
-                    "error:".red().bold(),
-                    dir.display()
-                );
-                return;
-            }
-        }
+        fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+        vprintln!("Created {} ({})", dir.display(), purpose);
     }
 
     let configure = Confirm::new()
@@ -79,6 +61,7 @@ pub fn init() {
         "✓".green().bold(),
         "dbt-assist manifest".bold()
     );
+    Ok(())
 }
 
 /// Create or patch `.vscode/settings.json`, preserving any existing settings.

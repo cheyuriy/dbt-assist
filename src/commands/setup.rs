@@ -7,19 +7,14 @@ use dialoguer::{Confirm, Input, Password, Select};
 use std::env;
 use std::io::Write;
 
-pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
+pub fn setup(
+    test_only: bool,
+    scope: Option<ConfigScope>,
+) -> Result<(), Box<dyn std::error::Error>> {
     vprintln!("Verbose mode enabled");
 
-    let (disc_path, disc_scope) = match config_dir(None) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve config directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let (disc_path, disc_scope) =
+        config_dir(None).map_err(|e| format!("could not resolve config directory: {e}"))?;
     let disc_exists = disc_path.join("config.yaml").exists();
     vprintln!(
         "Discovered {disc_scope} config dir at {} (config.yaml exists: {disc_exists})",
@@ -32,40 +27,30 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         (None, false) => ask_user_for_scope(),
     };
 
-    let (target_path, _) = match config_dir(Some(target_scope)) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve {target_scope} config directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let (target_path, _) = config_dir(Some(target_scope))
+        .map_err(|e| format!("could not resolve {target_scope} config directory: {e}"))?;
     let target_yaml = target_path.join("config.yaml");
     let target_exists = target_yaml.exists();
 
     if test_only {
         vprintln!("Test-only mode: validating existing config without modifying it");
         if !target_exists {
-            eprintln!(
-                "{} no config at {}. run {} first.",
-                "error:".red().bold(),
+            return Err(format!(
+                "no config at {}. run {} first.",
                 target_yaml.display().to_string().cyan(),
                 "dbt-assist setup".bold()
-            );
-            return;
+            )
+            .into());
         }
         println!(
             "Testing {} config at {}",
             target_scope.to_string().bold(),
             target_yaml.display().to_string().cyan()
         );
-        match load_config(Some(target_scope)) {
-            Ok((config, _)) => test_config(&config),
-            Err(e) => eprintln!("{} could not load config: {e}", "error:".red().bold()),
-        }
-        return;
+        let (config, _) =
+            load_config(Some(target_scope)).map_err(|e| format!("could not load config: {e}"))?;
+        test_config(&config);
+        return Ok(());
     }
 
     let verb = if target_exists { "Using" } else { "Creating" };
@@ -83,11 +68,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
             .unwrap_or(false);
         if !modify {
             println!("{}", "Keeping existing config.".dimmed());
-            match load_config(Some(target_scope)) {
-                Ok((config, _)) => test_config(&config),
-                Err(e) => eprintln!("{} could not load config: {e}", "error:".red().bold()),
-            }
-            return;
+            let (config, _) = load_config(Some(target_scope))
+                .map_err(|e| format!("could not load config: {e}"))?;
+            test_config(&config);
+            return Ok(());
         }
     }
 
@@ -104,13 +88,8 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     };
 
     vprintln!("Saving {target_scope} config to {}", target_yaml.display());
-    let saved_scope = match save_config(&config, Some(target_scope)) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("{} could not save config: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let saved_scope = save_config(&config, Some(target_scope))
+        .map_err(|e| format!("could not save config: {e}"))?;
     println!(
         "{} {} config saved to {}",
         "✓".green().bold(),
@@ -119,6 +98,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     );
 
     test_config(&config);
+    Ok(())
 }
 
 fn ask_user_for_scope() -> ConfigScope {

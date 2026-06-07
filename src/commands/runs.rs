@@ -9,34 +9,18 @@ use crate::models::runs::RunStatus;
 use crate::vprintln;
 
 /// `runs queue`: fetch the run queue for the project and print it as a table.
-pub fn queue(scope: Option<ConfigScope>, project_name: Option<String>) {
-    let (project, api) = match prepare(scope, project_name) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+pub fn queue(
+    scope: Option<ConfigScope>,
+    project_name: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (project, api) = prepare(scope, project_name)?;
 
-    let result = match block_on(async { api.get_runs_queue(&project).await }) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    let queue = match result {
-        Ok(queue) => queue,
-        Err(e) => {
-            eprintln!("{} could not fetch runs: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let queue = block_on(async { api.get_runs_queue(&project).await })?
+        .map_err(|e| format!("could not fetch runs: {e}"))?;
 
     if queue.runs.is_empty() {
         println!("{}", "No active or queued runs.".dimmed());
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -61,6 +45,7 @@ pub fn queue(scope: Option<ConfigScope>, project_name: Option<String>) {
     }
 
     println!("{table}");
+    Ok(())
 }
 
 /// `runs check`: fetch the status of `run_id`, print it as a table, and
@@ -72,33 +57,20 @@ pub fn check(
     logs_always: bool,
     debug_logs: bool,
     save_files: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     if save_files && !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} {} writes to {}, so run inside a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} writes to {}, so run inside a dbt project directory (no {} found here).",
             "--save-files".bold(),
             ".logs/".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let status = match fetch_status(scope, project_name, &run_id) {
-        Ok(status) => status,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let status = fetch_status(scope, project_name, &run_id)?;
 
     let logs_dir = if save_files {
         match save_logs(&cwd, &run_id, &status) {
@@ -117,30 +89,22 @@ pub fn check(
     if logs_always || status.is_failed() {
         print_logs(&status, debug_logs);
     }
+    Ok(())
 }
 
 /// `runs cancel`: cancel the run `run_id` within the project and confirm.
-pub fn cancel(scope: Option<ConfigScope>, project_name: Option<String>, run_id: String) {
-    let (project, api) = match prepare(scope, project_name) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+pub fn cancel(
+    scope: Option<ConfigScope>,
+    project_name: Option<String>,
+    run_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (project, api) = prepare(scope, project_name)?;
 
-    let result = match block_on(async { api.cancel_run(&project, &run_id).await }) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+    block_on(async { api.cancel_run(&project, &run_id).await })?
+        .map_err(|e| format!("could not cancel run: {e}"))?;
 
-    match result {
-        Ok(()) => println!("{} Run {} cancelled.", "✓".green().bold(), run_id.bold()),
-        Err(e) => eprintln!("{} could not cancel run: {e}", "error:".red().bold()),
-    }
+    println!("{} Run {} cancelled.", "✓".green().bold(), run_id.bold());
+    Ok(())
 }
 
 /// Shared setup for the runs subcommands: resolve cwd + project name, load the

@@ -13,7 +13,11 @@ use crate::vprintln;
 /// `templates list`: print a table of available templates. When no source flag
 /// is set, all three sources are shown in precedence order (predefined > user >
 /// project); otherwise only the flagged sources.
-pub fn list(predefined: bool, user: bool, project: bool) {
+pub fn list(
+    predefined: bool,
+    user: bool,
+    project: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let sources: Vec<TemplateSource> = if !predefined && !user && !project {
         ALL_SOURCES.to_vec()
     } else {
@@ -27,28 +31,15 @@ pub fn list(predefined: bool, user: bool, project: bool) {
             .collect()
     };
 
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
-    let entries = match list_templates(&sources, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} could not list templates: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let entries =
+        list_templates(&sources, &cwd).map_err(|e| format!("could not list templates: {e}"))?;
 
     if entries.is_empty() {
         println!("{}", "No templates found.".dimmed());
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -71,46 +62,28 @@ pub fn list(predefined: bool, user: bool, project: bool) {
     }
 
     println!("{table}");
+    Ok(())
 }
 
 /// `templates docs`: show the `{% docs %}` block and the raw `{% output %}`
 /// path expression for a template.
-pub fn docs(name: String, source: Option<TemplateSource>) {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
+pub fn docs(
+    name: String,
+    source: Option<TemplateSource>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
+
+    let entries =
+        list_templates(&ALL_SOURCES, &cwd).map_err(|e| format!("could not list templates: {e}"))?;
+
+    // `resolve_one` reports its own error; treat that as a handled early exit.
+    let Ok(entry) = resolve_one(&entries, &name, source) else {
+        return Ok(());
     };
 
-    let entries = match list_templates(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} could not list templates: {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    let entry = match resolve_one(&entries, &name, source) {
-        Ok(entry) => entry,
-        Err(()) => return,
-    };
-
-    let parsed = match parse_template(&entry.raw) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!(
-                "{} could not parse template {}: {e}",
-                "error:".red().bold(),
-                name.bold()
-            );
-            return;
-        }
-    };
+    let parsed = parse_template(&entry.raw)
+        .map_err(|e| format!("could not parse template {}: {e}", name.bold()))?;
 
     println!("{} ({})", name.bold(), entry.source.to_string().dimmed());
     println!();
@@ -123,102 +96,56 @@ pub fn docs(name: String, source: Option<TemplateSource>) {
         Some(output) => println!("Output: {}", output.bold()),
         None => println!("Output: {}", "(no output tag)".dimmed()),
     }
+    Ok(())
 }
 
 /// `templates build`: render a template into a dbt model file.
-pub fn build(args: Vec<String>) {
-    let parsed_args = match parse_build_args(&args) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+pub fn build(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let parsed_args = parse_build_args(&args)?;
 
-    if let Err(e) = validate_template_name(&parsed_args.name) {
-        eprintln!("{} {e}", "error:".red().bold());
-        return;
-    }
+    validate_template_name(&parsed_args.name)?;
 
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} {} must be run from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} must be run from a dbt project directory (no {} found here).",
             "templates build".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let entries = match list_templates(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} could not list templates: {e}", "error:".red().bold());
-            return;
-        }
+    let entries =
+        list_templates(&ALL_SOURCES, &cwd).map_err(|e| format!("could not list templates: {e}"))?;
+
+    // `resolve_one` reports its own error; treat that as a handled early exit.
+    let Ok(entry) = resolve_one(&entries, &parsed_args.name, parsed_args.source) else {
+        return Ok(());
     };
 
-    let entry = match resolve_one(&entries, &parsed_args.name, parsed_args.source) {
-        Ok(entry) => entry,
-        Err(()) => return,
-    };
-
-    let parsed = match parse_template(&entry.raw) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!(
-                "{} could not parse template {}: {e}",
-                "error:".red().bold(),
-                parsed_args.name.bold()
-            );
-            return;
-        }
-    };
+    let parsed = parse_template(&entry.raw)
+        .map_err(|e| format!("could not parse template {}: {e}", parsed_args.name.bold()))?;
 
     // Resolve the output path: an explicit --output is used literally; otherwise
     // the {% output %} tag is interpolated with the supplied variables.
     let rel_path = match (&parsed_args.output, &parsed.output) {
         (Some(output), _) => output.clone(),
-        (None, Some(tag)) => match render_str(tag, &parsed_args.vars) {
-            Ok(path) => path,
-            Err(e) => {
-                eprintln!(
-                    "{} could not render output path: {e}",
-                    "error:".red().bold()
-                );
-                return;
-            }
-        },
+        (None, Some(tag)) => render_str(tag, &parsed_args.vars)
+            .map_err(|e| format!("could not render output path: {e}"))?,
         (None, None) => {
-            eprintln!(
-                "{} template {} has no {} tag; pass {} to set the destination.",
-                "error:".red().bold(),
+            return Err(format!(
+                "template {} has no {} tag; pass {} to set the destination.",
                 parsed_args.name.bold(),
                 "{% output %}".bold(),
                 "--output <path>".bold()
-            );
-            return;
+            )
+            .into());
         }
     };
 
-    let body = match render_str(&parsed.body, &parsed_args.vars) {
-        Ok(body) => body,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let body = render_str(&parsed.body, &parsed_args.vars)?;
 
     let dest = cwd.join(&rel_path);
 
@@ -230,29 +157,16 @@ pub fn build(args: Vec<String>) {
             .unwrap_or(false);
         if !proceed {
             println!("{}", "Model not created.".dimmed());
-            return;
+            return Ok(());
         }
     }
 
-    if let Some(parent) = dest.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        eprintln!(
-            "{} could not create {}: {e}",
-            "error:".red().bold(),
-            parent.display()
-        );
-        return;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
     }
 
-    if let Err(e) = std::fs::write(&dest, body) {
-        eprintln!(
-            "{} could not write {}: {e}",
-            "error:".red().bold(),
-            dest.display()
-        );
-        return;
-    }
+    std::fs::write(&dest, body).map_err(|e| format!("could not write {}: {e}", dest.display()))?;
     vprintln!("Wrote {}", dest.display());
 
     println!(
@@ -260,6 +174,7 @@ pub fn build(args: Vec<String>) {
         "✓".green().bold(),
         rel_path.bold()
     );
+    Ok(())
 }
 
 /// Resolve a single template by name, disambiguating with `source`. Prints a

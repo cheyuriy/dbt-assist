@@ -9,25 +9,37 @@ mod verbose;
 
 use clap::Parser;
 use cli::CLI;
+use colored::Colorize;
+use std::process::ExitCode;
 
-fn main() {
+fn main() -> ExitCode {
     let cli = CLI::parse();
     verbose::set_verbose(cli.verbose);
 
-    match cli.command {
+    // Each command returns `Result<(), Box<dyn Error>>`; errors are reported
+    // here (once, with a consistent prefix) and turned into a failing exit code.
+    let result = run(cli.command);
+
+    if let Err(e) = result {
+        eprintln!("{} {e}", "error:".red().bold());
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Dispatch a parsed command to its handler, returning its result.
+fn run(command: cli::Commands) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
         cli::Commands::Setup { test_only, scope } => {
-            crate::commands::setup(test_only, scope.map(Into::into));
+            crate::commands::setup(test_only, scope.map(Into::into))
         }
-        cli::Commands::Init => {
-            crate::commands::init();
-        }
+        cli::Commands::Init => crate::commands::init(),
         cli::Commands::Manifest {
             scope,
             project_name,
             manifest_dir,
-        } => {
-            crate::commands::manifest(scope.map(Into::into), project_name, manifest_dir);
-        }
+        } => crate::commands::manifest(scope.map(Into::into), project_name, manifest_dir),
         cli::Commands::Jobs { jobs_subcommands } => match jobs_subcommands {
             cli::JobsSubcommands::Run {
                 alias,
@@ -40,20 +52,18 @@ fn main() {
                 debug_logs,
                 save_files,
                 yes,
-            } => {
-                crate::commands::jobs::run(
-                    alias,
-                    source.map(Into::into),
-                    project_name,
-                    turbo,
-                    scope.map(Into::into),
-                    watch,
-                    logs_always,
-                    debug_logs,
-                    save_files,
-                    yes,
-                );
-            }
+            } => crate::commands::jobs::run(
+                alias,
+                source.map(Into::into),
+                project_name,
+                turbo,
+                scope.map(Into::into),
+                watch,
+                logs_always,
+                debug_logs,
+                save_files,
+                yes,
+            ),
             cli::JobsSubcommands::Manual {
                 select,
                 exclude,
@@ -66,29 +76,25 @@ fn main() {
                 debug_logs,
                 save_files,
                 yes,
-            } => {
-                crate::commands::jobs::manual(
-                    select,
-                    exclude,
-                    full_refresh,
-                    project_name,
-                    turbo,
-                    scope.map(Into::into),
-                    watch,
-                    logs_always,
-                    debug_logs,
-                    save_files,
-                    yes,
-                );
-            }
+            } => crate::commands::jobs::manual(
+                select,
+                exclude,
+                full_refresh,
+                project_name,
+                turbo,
+                scope.map(Into::into),
+                watch,
+                logs_always,
+                debug_logs,
+                save_files,
+                yes,
+            ),
         },
         cli::Commands::Runs { runs_subcommands } => match runs_subcommands {
             cli::RunsSubcommands::Queue {
                 scope,
                 project_name,
-            } => {
-                crate::commands::runs::queue(scope.map(Into::into), project_name);
-            }
+            } => crate::commands::runs::queue(scope.map(Into::into), project_name),
             cli::RunsSubcommands::Check {
                 run_id,
                 scope,
@@ -96,43 +102,35 @@ fn main() {
                 logs_always,
                 debug_logs,
                 save_files,
-            } => {
-                crate::commands::runs::check(
-                    scope.map(Into::into),
-                    project_name,
-                    run_id,
-                    logs_always,
-                    debug_logs,
-                    save_files,
-                );
-            }
+            } => crate::commands::runs::check(
+                scope.map(Into::into),
+                project_name,
+                run_id,
+                logs_always,
+                debug_logs,
+                save_files,
+            ),
             cli::RunsSubcommands::Cancel {
                 run_id,
                 scope,
                 project_name,
-            } => {
-                crate::commands::runs::cancel(scope.map(Into::into), project_name, run_id);
-            }
+            } => crate::commands::runs::cancel(scope.map(Into::into), project_name, run_id),
         },
         cli::Commands::Alias { alias_subcommands } => match alias_subcommands {
             cli::AliasSubcommands::List {
                 predefined,
                 user,
                 project,
-            } => {
-                crate::commands::alias::list(predefined, user, project);
-            }
+            } => crate::commands::alias::list(predefined, user, project),
             cli::AliasSubcommands::Add {
                 name,
                 target,
                 select,
                 exclude,
                 full_refresh,
-            } => {
-                crate::commands::alias::add(name, target.into(), select, exclude, full_refresh);
-            }
+            } => crate::commands::alias::add(name, target.into(), select, exclude, full_refresh),
             cli::AliasSubcommands::Remove { name, source } => {
-                crate::commands::alias::remove(name, source.map(Into::into));
+                crate::commands::alias::remove(name, source.map(Into::into))
             }
         },
         cli::Commands::Templates {
@@ -142,15 +140,11 @@ fn main() {
                 predefined,
                 user,
                 project,
-            } => {
-                crate::commands::templates::list(predefined, user, project);
-            }
+            } => crate::commands::templates::list(predefined, user, project),
             cli::TemplatesSubcommands::Docs { name, source } => {
-                crate::commands::templates::docs(name, source.map(Into::into));
+                crate::commands::templates::docs(name, source.map(Into::into))
             }
-            cli::TemplatesSubcommands::Build { args } => {
-                crate::commands::templates::build(args);
-            }
+            cli::TemplatesSubcommands::Build { args } => crate::commands::templates::build(args),
         },
     }
 }

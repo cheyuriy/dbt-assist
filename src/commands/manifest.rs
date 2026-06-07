@@ -16,74 +16,34 @@ pub fn manifest(
     scope: Option<ConfigScope>,
     project_name: Option<String>,
     manifest_dir: Option<String>,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} {} must be run from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} must be run from a dbt project directory (no {} found here).",
             "manifest".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let (config, resolved) = match load_config(scope) {
-        Ok(loaded) => loaded,
-        Err(e) => {
-            eprintln!("{} could not load config: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let (config, resolved) = load_config(scope).map_err(|e| format!("could not load config: {e}"))?;
     vprintln!("Loaded {resolved} config");
 
     // Resolve the destination directory and ensure it exists.
     let dest_dir = cwd.join(manifest_dir.as_deref().unwrap_or(".manifest"));
-    if let Err(e) = fs::create_dir_all(&dest_dir) {
-        eprintln!(
-            "{} could not create {}: {e}",
-            "error:".red().bold(),
-            dest_dir.display()
-        );
-        return;
-    }
+    fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("could not create {}: {e}", dest_dir.display()))?;
     let dest = dest_dir.join("manifest.json");
 
     let source_modified = match &config.manifest_storage {
-        ManifestStorage::Local { path } => match copy_local(path, &dest) {
-            Ok(modified) => modified,
-            Err(e) => {
-                eprintln!("{} {e}", "error:".red().bold());
-                return;
-            }
-        },
+        ManifestStorage::Local { path } => copy_local(path, &dest)?,
         ManifestStorage::GCS { bucket, path, .. } => {
-            let project = match resolve_project_name(project_name.as_deref(), &cwd) {
-                Ok(name) => name,
-                Err(e) => {
-                    eprintln!("{} {e}", "error:".red().bold());
-                    return;
-                }
-            };
+            let project = resolve_project_name(project_name.as_deref(), &cwd)?;
             let object = manifest_object_key(path, &project);
             vprintln!("Downloading gs://{bucket}/{object}");
-            match download_gcs(&config, bucket, &object, &dest) {
-                Ok(modified) => modified,
-                Err(e) => {
-                    eprintln!("{} {e}", "error:".red().bold());
-                    return;
-                }
-            }
+            download_gcs(&config, bucket, &object, &dest)?
         }
     };
 
@@ -94,6 +54,7 @@ pub fn manifest(
         "{} Manifest refreshed. State for the \"defer\" function is updated.",
         "✓".green().bold()
     );
+    Ok(())
 }
 
 /// Copies `<path>/manifest.json` to `dest`, returning the source's last-modified

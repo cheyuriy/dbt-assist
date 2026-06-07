@@ -39,48 +39,27 @@ pub fn run(
     debug_logs: bool,
     save_files: bool,
     yes: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} run inside a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here).",
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let entries = match list_aliases(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} could not list aliases: {e}", "error:".red().bold());
-            return;
-        }
+    let entries =
+        list_aliases(&ALL_SOURCES, &cwd).map_err(|e| format!("could not list aliases: {e}"))?;
+
+    // `resolve_alias` reports its own error; treat that as a handled early exit.
+    let Ok(entry) = resolve_alias(&entries, &alias, source) else {
+        return Ok(());
     };
 
-    let entry = match resolve_alias(&entries, &alias, source) {
-        Ok(entry) => entry,
-        Err(()) => return,
-    };
-
-    let parsed: Alias = match serde_yml::from_str(&entry.definition) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!(
-                "{} could not parse alias {}: {e}",
-                "error:".red().bold(),
-                alias.bold()
-            );
-            return;
-        }
-    };
+    let parsed: Alias = serde_yml::from_str(&entry.definition)
+        .map_err(|e| format!("could not parse alias {}: {e}", alias.bold()))?;
 
     vprintln!("Running alias {alias} ({})", entry.source);
 
@@ -98,7 +77,7 @@ pub fn run(
         debug_logs,
         save_files,
         yes,
-    );
+    )
 }
 
 /// `jobs manual`: create a one-off run that builds the selected models on the
@@ -116,57 +95,35 @@ pub fn manual(
     debug_logs: bool,
     save_files: bool,
     yes: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     // This command drives a build of *this* dbt project, so it must run from a
     // project root — even when --project-name overrides the name.
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} run inside a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here).",
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let (project, api) = match runs::prepare(scope, project_name.clone()) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let (project, api) = runs::prepare(scope, project_name.clone())?;
 
     // Step 1: pre-flight checks — abort early if the user declines either.
     if !check_build_impact(&cwd, &select, exclude.as_deref(), full_refresh, yes) {
-        return;
+        return Ok(());
     }
     if !check_queue(&api, &project, yes) {
-        return;
+        return Ok(());
     }
 
     // Step 2: create the run and get its id.
-    let run_id = match runs::block_on(async {
+    let run_id = runs::block_on(async {
         api.create_run(&project, &select, exclude.as_deref(), full_refresh, turbo)
             .await
-    }) {
-        Ok(Ok(run_id)) => run_id,
-        Ok(Err(e)) => {
-            eprintln!("{} could not create run: {e}", "error:".red().bold());
-            return;
-        }
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+    })?
+    .map_err(|e| format!("could not create run: {e}"))?;
     // The status/cancel APIs take the id as a string (it arrives that way from
     // the CLI elsewhere); convert once here.
     let run_id = run_id.to_string();
@@ -177,14 +134,14 @@ pub fn manual(
             "Check status with: {}",
             format!("{} runs check {run_id}", env!("CARGO_PKG_NAME")).bold()
         );
-        return;
+        return Ok(());
     }
 
     // Step 3: poll the run, redrawing the status table in place each iteration.
     let mut redrawer = Redrawer::default();
-    let final_status = match watch_run(scope, project_name, &run_id, &mut redrawer) {
-        Some(status) => status,
-        None => return,
+    // `watch_run` reports its own fetch error; treat that as a handled early exit.
+    let Some(final_status) = watch_run(scope, project_name, &run_id, &mut redrawer) else {
+        return Ok(());
     };
 
     let logs_dir = if save_files {
@@ -206,6 +163,7 @@ pub fn manual(
     if logs_always || final_status.is_failed() {
         runs::print_logs(&final_status, debug_logs);
     }
+    Ok(())
 }
 
 /// Resolve `name` to exactly one alias entry, disambiguating by `source`.
