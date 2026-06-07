@@ -1,5 +1,5 @@
 pub mod alias;
-pub mod build_impact;
+pub mod dbt_ls;
 pub mod config;
 pub mod runs;
 pub mod template;

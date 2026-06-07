@@ -7,7 +7,7 @@ use dialoguer::Confirm;
 use crate::api::client::{DbtApi, DbtApiClient};
 use crate::commands::runs;
 use crate::models::alias::{ALL_SOURCES, Alias, AliasEntry, AliasSource, find_by_name, list_aliases};
-use crate::models::build_impact::parse_build_impact;
+use crate::models::dbt_ls::parse_build_impact;
 use crate::models::config::ConfigScope;
 use crate::models::runs::RunStatus;
 use crate::vprintln;
