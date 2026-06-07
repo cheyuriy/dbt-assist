@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::client::{DbtApiClient, check_ping_ok};
+use crate::errors::DirectError;
 use crate::models::runs::{Run, RunStatus, RunsQueue};
 
 /// Direct connection to the dbt API: requests go to `url` and are authorized
@@ -58,10 +59,7 @@ impl DirectClient {
     /// Looks up the dbt project id for `project_name`. Names are compared after
     /// lower-casing and turning `-`/` ` into `_`, so e.g. `My Project` matches
     /// `my_project`.
-    async fn resolve_project_id(
-        &self,
-        project_name: &str,
-    ) -> Result<i64, Box<dyn std::error::Error>> {
+    async fn resolve_project_id(&self, project_name: &str) -> Result<i64, DirectError> {
         let url = format!("{}/projects/", self.account_base());
         let resp = self.http.get(url).bearer_auth(&self.token).send().await?;
         if resp.status() != reqwest::StatusCode::OK {
@@ -73,12 +71,12 @@ impl DirectClient {
             .into_iter()
             .find(|p| normalize(&p.name) == target)
             .map(|p| p.id)
-            .ok_or_else(|| format!("project '{project_name}' not found in dbt account").into())
+            .ok_or_else(|| DirectError::ProjectNotFound(project_name.to_string()))
     }
 
     /// Looks up the dbt-assist job within `project_id`, returning its id and the
     /// environment id it runs in.
-    async fn resolve_job(&self, project_id: i64) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+    async fn resolve_job(&self, project_id: i64) -> Result<(i64, i64), DirectError> {
         let url = format!("{}/jobs/", self.account_base());
         let resp = self
             .http
@@ -95,12 +93,9 @@ impl DirectClient {
             .into_iter()
             .find(|j| j.name == self.dbt_assist_job_name)
             .map(|j| (j.id, j.environment_id))
-            .ok_or_else(|| {
-                format!(
-                    "job '{}' not found in project {project_id}",
-                    self.dbt_assist_job_name
-                )
-                .into()
+            .ok_or_else(|| DirectError::JobNotFound {
+                job: self.dbt_assist_job_name.clone(),
+                project_id,
             })
     }
 }
@@ -113,13 +108,13 @@ fn normalize(name: &str) -> String {
 
 /// Builds an error from a non-success dbt API response, appending the response
 /// body when present and falling back to just the status.
-async fn error_for(context: &str, resp: reqwest::Response) -> Box<dyn std::error::Error> {
+async fn error_for(context: &str, resp: reqwest::Response) -> DirectError {
     let status = resp.status();
     match resp.text().await {
         Ok(body) if !body.trim().is_empty() => {
-            format!("{context} failed with status {status}: {body}").into()
+            DirectError::BadStatus(format!("{context} failed with status {status}: {body}"))
         }
-        _ => format!("{context} failed with status {status}").into(),
+        _ => DirectError::BadStatus(format!("{context} failed with status {status}")),
     }
 }
 
@@ -187,7 +182,10 @@ impl DbtApiClient for DirectClient {
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{}/v2/accounts", self.url.trim_end_matches('/'));
         let resp = self.http.get(url).bearer_auth(&self.token).send().await?;
-        check_ping_ok(resp)
+        check_ping_ok(resp).map_err(|status| {
+            DirectError::BadStatus(format!("ping failed with status {status}"))
+        })?;
+        Ok(())
     }
 
     async fn get_runs_queue(
@@ -211,7 +209,7 @@ impl DbtApiClient for DirectClient {
             .send()
             .await?;
         if resp.status() != reqwest::StatusCode::OK {
-            return Err(error_for("list runs", resp).await);
+            return Err(error_for("list runs", resp).await.into());
         }
 
         let env: Envelope<Vec<Run>> = resp.json().await?;
@@ -287,7 +285,7 @@ impl DbtApiClient for DirectClient {
             .send()
             .await?;
         if resp.status() != reqwest::StatusCode::OK {
-            return Err(error_for("update job", resp).await);
+            return Err(error_for("update job", resp).await.into());
         }
 
         let trigger_url = format!("{}/jobs/{job_id}/run/", self.account_base());
@@ -303,7 +301,7 @@ impl DbtApiClient for DirectClient {
             .await?;
         if resp.status() != reqwest::StatusCode::OK && resp.status() != reqwest::StatusCode::CREATED
         {
-            return Err(error_for("trigger job run", resp).await);
+            return Err(error_for("trigger job run", resp).await.into());
         }
         let env: Envelope<RunIdRef> = resp.json().await?;
         Ok(env.data.id)
@@ -326,7 +324,7 @@ impl DbtApiClient for DirectClient {
             .send()
             .await?;
         if resp.status() != reqwest::StatusCode::OK {
-            return Err(error_for("check run status", resp).await);
+            return Err(error_for("check run status", resp).await.into());
         }
         let env: Envelope<RunStatus> = resp.json().await?;
         Ok(env.data)
@@ -340,7 +338,7 @@ impl DbtApiClient for DirectClient {
         let url = format!("{}/runs/{run_id}/cancel/", self.account_base());
         let resp = self.http.post(url).bearer_auth(&self.token).send().await?;
         if resp.status() != reqwest::StatusCode::OK {
-            return Err(error_for("cancel run", resp).await);
+            return Err(error_for("cancel run", resp).await.into());
         }
         let env: Envelope<CancelRef> = resp.json().await?;
         // A run that is queued/starting/running (1/2/3) or cancelled (30) is
@@ -348,11 +346,7 @@ impl DbtApiClient for DirectClient {
         if matches!(env.data.status, 1 | 2 | 3 | 30) {
             Ok(())
         } else {
-            Err(format!(
-                "cancel run did not take effect; run status is {}",
-                env.data.status
-            )
-            .into())
+            Err(DirectError::CancelNotEffective(env.data.status).into())
         }
     }
 }
@@ -447,7 +441,9 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path("/v2/accounts/42/jobs/100/")
-                    .body_contains("dbt build --select tag:nightly --exclude model_x --full-refresh")
+                    .body_contains(
+                        "dbt build --select tag:nightly --exclude model_x --full-refresh",
+                    )
                     .body_contains("\"target_name\":\"prod\"")
                     .body_contains("\"threads\":1");
                 then.status(200).json_body(json!({"data": {"id": 100}}));
@@ -464,7 +460,13 @@ mod tests {
             .await;
 
         let run_id = client(&server, "t")
-            .create_run("my-project", "tag:nightly", Some("model_x"), Some(true), false)
+            .create_run(
+                "my-project",
+                "tag:nightly",
+                Some("model_x"),
+                Some(true),
+                false,
+            )
             .await
             .expect("create run");
 

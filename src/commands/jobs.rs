@@ -6,9 +6,11 @@ use dialoguer::Confirm;
 
 use crate::api::client::{DbtApi, DbtApiClient};
 use crate::commands::runs;
-use crate::models::alias::{ALL_SOURCES, Alias, AliasEntry, AliasSource, find_by_name, list_aliases};
-use crate::models::build_impact::parse_build_impact;
+use crate::models::alias::{
+    ALL_SOURCES, Alias, AliasEntry, AliasSource, find_by_name, list_aliases,
+};
 use crate::models::config::ConfigScope;
+use crate::models::dbt_ls::parse_build_impact;
 use crate::models::runs::RunStatus;
 use crate::vprintln;
 
@@ -37,47 +39,27 @@ pub fn run(
     debug_logs: bool,
     save_files: bool,
     yes: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} run inside a dbt project directory (no dbt_project.yml found here)",
-            "error:".red().bold()
-        );
-        return;
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here).",
+            "dbt_project.yml".bold()
+        )
+        .into());
     }
 
-    let entries = match list_aliases(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
-            return;
-        }
+    let entries =
+        list_aliases(&ALL_SOURCES, &cwd).map_err(|e| format!("could not list aliases: {e}"))?;
+
+    // `resolve_alias` reports its own error; treat that as a handled early exit.
+    let Ok(entry) = resolve_alias(&entries, &alias, source) else {
+        return Ok(());
     };
 
-    let entry = match resolve_alias(&entries, &alias, source) {
-        Ok(entry) => entry,
-        Err(()) => return,
-    };
-
-    let parsed: Alias = match serde_yml::from_str(&entry.definition) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            eprintln!(
-                "{} Could not parse alias {}: {e}",
-                "error:".red().bold(),
-                alias.bold()
-            );
-            return;
-        }
-    };
+    let parsed: Alias = serde_yml::from_str(&entry.definition)
+        .map_err(|e| format!("could not parse alias {}: {e}", alias.bold()))?;
 
     vprintln!("Running alias {alias} ({})", entry.source);
 
@@ -95,7 +77,93 @@ pub fn run(
         debug_logs,
         save_files,
         yes,
-    );
+    )
+}
+
+/// `jobs manual`: create a one-off run that builds the selected models on the
+/// production job, then (with `--watch`) poll it to completion.
+#[allow(clippy::too_many_arguments)]
+pub fn manual(
+    select: String,
+    exclude: Option<String>,
+    full_refresh: Option<bool>,
+    project_name: Option<String>,
+    turbo: bool,
+    scope: Option<ConfigScope>,
+    watch: bool,
+    logs_always: bool,
+    debug_logs: bool,
+    save_files: bool,
+    yes: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+
+    // This command drives a build of *this* dbt project, so it must run from a
+    // project root — even when --project-name overrides the name.
+    if !crate::utils::is_dbt_project(&cwd) {
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here).",
+            "dbt_project.yml".bold()
+        )
+        .into());
+    }
+
+    let (project, api) = runs::prepare(scope, project_name.clone())?;
+
+    // Step 1: pre-flight checks — abort early if the user declines either.
+    if !check_build_impact(&cwd, &select, exclude.as_deref(), full_refresh, yes) {
+        return Ok(());
+    }
+    if !check_queue(&api, &project, yes) {
+        return Ok(());
+    }
+
+    // Step 2: create the run and get its id.
+    let run_id = runs::block_on(async {
+        api.create_run(&project, &select, exclude.as_deref(), full_refresh, turbo)
+            .await
+    })?
+    .map_err(|e| format!("could not create run: {e}"))?;
+    // The status/cancel APIs take the id as a string (it arrives that way from
+    // the CLI elsewhere); convert once here.
+    let run_id = run_id.to_string();
+
+    if !watch {
+        println!("{} Run created: {}", "✓".green().bold(), run_id.bold());
+        println!(
+            "Check status with: {}",
+            format!("{} runs check {run_id}", env!("CARGO_PKG_NAME")).bold()
+        );
+        return Ok(());
+    }
+
+    // Step 3: poll the run, redrawing the status table in place each iteration.
+    let mut redrawer = Redrawer::default();
+    // `watch_run` reports its own fetch error; treat that as a handled early exit.
+    let Some(final_status) = watch_run(scope, project_name, &run_id, &mut redrawer) else {
+        return Ok(());
+    };
+
+    let logs_dir = if save_files {
+        match runs::save_logs(&cwd, &run_id, &final_status) {
+            Ok(dir) => Some(dir),
+            Err(e) => {
+                eprintln!("{} could not save logs: {e}", "warning:".yellow().bold());
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Final frame: redraw over the last live frame so the outcome (now with the
+    // logs directory) replaces it rather than stacking a duplicate table.
+    redrawer.draw(&runs::build_status_table(&final_status, logs_dir.as_deref()).to_string());
+
+    if logs_always || final_status.is_failed() {
+        runs::print_logs(&final_status, debug_logs);
+    }
+    Ok(())
 }
 
 /// Resolve `name` to exactly one alias entry, disambiguating by `source`.
@@ -109,7 +177,11 @@ fn resolve_alias<'a>(
 ) -> Result<&'a AliasEntry, ()> {
     let matches = find_by_name(entries, name);
     if matches.is_empty() {
-        eprintln!("{} no alias named {} found.", "error:".red().bold(), name.bold());
+        eprintln!(
+            "{} no alias named {} found.",
+            "error:".red().bold(),
+            name.bold()
+        );
         return Err(());
     }
 
@@ -135,7 +207,7 @@ fn resolve_alias<'a>(
             .collect::<Vec<_>>()
             .join(", ");
         eprintln!(
-            "{} alias {} exists in multiple sources ({}). Pass {} to disambiguate.",
+            "{} alias {} exists in multiple sources ({}). pass {} to disambiguate.",
             "error:".red().bold(),
             name.bold(),
             where_str.bold(),
@@ -145,112 +217,6 @@ fn resolve_alias<'a>(
     }
 
     Ok(matches[0])
-}
-
-/// `jobs manual`: create a one-off run that builds the selected models on the
-/// production job, then (with `--watch`) poll it to completion.
-#[allow(clippy::too_many_arguments)]
-pub fn manual(
-    select: String,
-    exclude: Option<String>,
-    full_refresh: Option<bool>,
-    project_name: Option<String>,
-    turbo: bool,
-    scope: Option<ConfigScope>,
-    watch: bool,
-    logs_always: bool,
-    debug_logs: bool,
-    save_files: bool,
-    yes: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    // This command drives a build of *this* dbt project, so it must run from a
-    // project root — even when --project-name overrides the name.
-    if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} run inside a dbt project directory (no dbt_project.yml found here)",
-            "error:".red().bold()
-        );
-        return;
-    }
-
-    let (project, api) = match runs::prepare(scope, project_name.clone()) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    // Step 1: pre-flight checks — abort early if the user declines either.
-    if !check_build_impact(&cwd, &select, exclude.as_deref(), full_refresh, yes) {
-        return;
-    }
-    if !check_queue(&api, &project, yes) {
-        return;
-    }
-
-    // Step 2: create the run and get its id.
-    let run_id = match runs::block_on(async {
-        api.create_run(&project, &select, exclude.as_deref(), full_refresh, turbo)
-            .await
-    }) {
-        Ok(Ok(run_id)) => run_id,
-        Ok(Err(e)) => {
-            eprintln!("{} Could not create run: {e}", "error:".red().bold());
-            return;
-        }
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-    // The status/cancel APIs take the id as a string (it arrives that way from
-    // the CLI elsewhere); convert once here.
-    let run_id = run_id.to_string();
-
-    if !watch {
-        println!("{}", format!("Run created: {run_id}").green());
-        println!(
-            "Check status with: {} runs check {run_id}",
-            env!("CARGO_PKG_NAME")
-        );
-        return;
-    }
-
-    // Step 3: poll the run, redrawing the status table in place each iteration.
-    let mut redrawer = Redrawer::default();
-    let final_status = match watch_run(scope, project_name, &run_id, &mut redrawer) {
-        Some(status) => status,
-        None => return,
-    };
-
-    let logs_dir = if save_files {
-        match runs::save_logs(&cwd, &run_id, &final_status) {
-            Ok(dir) => Some(dir),
-            Err(e) => {
-                eprintln!("{} Could not save logs: {e}", "warning:".yellow().bold());
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // Final frame: redraw over the last live frame so the outcome (now with the
-    // logs directory) replaces it rather than stacking a duplicate table.
-    redrawer.draw(&runs::build_status_table(&final_status, logs_dir.as_deref()).to_string());
-
-    if logs_always || final_status.is_failed() {
-        runs::print_logs(&final_status, debug_logs);
-    }
 }
 
 /// Confirm an action, short-circuiting to `true` when `--yes` was passed.
@@ -295,8 +261,9 @@ fn check_build_impact(
         Ok(output) => output,
         Err(e) => {
             eprintln!(
-                "{} could not run `dbt ls`: {e} (is dbt installed and on PATH?)",
-                "error:".red().bold()
+                "{} could not run {}: {e} (is dbt installed and on PATH?)",
+                "error:".red().bold(),
+                "dbt ls".bold()
             );
             return confirm("Continue without the build-impact check?", yes);
         }
@@ -307,7 +274,7 @@ fn check_build_impact(
         if !stderr.trim().is_empty() {
             eprint!("{stderr}");
         }
-        eprintln!("{} `dbt ls` failed.", "error:".red().bold());
+        eprintln!("{} {} failed.", "error:".red().bold(), "dbt ls".bold());
         return confirm("Continue without the build-impact check?", yes);
     }
 
@@ -351,14 +318,14 @@ fn check_queue(api: &DbtApi, project: &str, yes: bool) -> bool {
         Ok(Ok(queue)) => queue,
         Ok(Err(e)) => {
             eprintln!(
-                "{} Could not check the runs queue: {e}",
+                "{} could not check the runs queue: {e}",
                 "warning:".yellow().bold()
             );
             return confirm("Continue anyway?", yes);
         }
         Err(e) => {
             eprintln!(
-                "{} Could not check the runs queue: {e}",
+                "{} could not check the runs queue: {e}",
                 "warning:".yellow().bold()
             );
             return confirm("Continue anyway?", yes);

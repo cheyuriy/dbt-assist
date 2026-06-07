@@ -12,7 +12,11 @@ use crate::vprintln;
 /// `alias list`: print a table of available aliases. When no source flag is
 /// set, all three sources are shown in precedence order (predefined > user >
 /// project); otherwise only the flagged sources.
-pub fn list(predefined: bool, user: bool, project: bool) {
+pub fn list(
+    predefined: bool,
+    user: bool,
+    project: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let sources: Vec<AliasSource> = if !predefined && !user && !project {
         ALL_SOURCES.to_vec()
     } else {
@@ -26,28 +30,15 @@ pub fn list(predefined: bool, user: bool, project: bool) {
             .collect()
     };
 
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
-    let entries = match list_aliases(&sources, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let entries =
+        list_aliases(&sources, &cwd).map_err(|e| format!("could not list aliases: {e}"))?;
 
     if entries.is_empty() {
         println!("{}", "No aliases found.".dimmed());
-        return;
+        return Ok(());
     }
 
     let mut table = Table::new();
@@ -72,6 +63,7 @@ pub fn list(predefined: bool, user: bool, project: bool) {
     }
 
     println!("{table}");
+    Ok(())
 }
 
 /// `alias add`: create a new user or project alias.
@@ -81,50 +73,32 @@ pub fn add(
     select: String,
     exclude: Option<String>,
     full_refresh: Option<bool>,
-) {
-    if let Err(e) = validate_alias_name(&name) {
-        eprintln!("{} {e}", "error:".red().bold());
-        return;
-    }
+) -> Result<(), Box<dyn std::error::Error>> {
+    validate_alias_name(&name)?;
 
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
     if target == AliasSource::Project && !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} a project alias must be created from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "a project alias must be created from a dbt project directory (no {} found here).",
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let entries = match list_aliases(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} Could not inspect existing aliases: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let entries = list_aliases(&ALL_SOURCES, &cwd)
+        .map_err(|e| format!("could not inspect existing aliases: {e}"))?;
     let matches = find_by_name(&entries, &name);
 
     // Same name already exists in the chosen target: abort.
     if matches.iter().any(|e| e.source == target) {
-        eprintln!(
-            "{} an alias named {} already exists in {}.",
-            "error:".red().bold(),
+        return Err(format!(
+            "an alias named {} already exists in {}.",
             name.bold(),
             target.to_string().bold()
-        );
-        return;
+        )
+        .into());
     }
 
     // Same name exists in a different source: warn and confirm.
@@ -150,72 +124,44 @@ pub fn add(
             .unwrap_or(false);
         if !proceed {
             println!("{}", "Alias not created.".dimmed());
-            return;
+            return Ok(());
         }
     }
 
     // Resolve the destination directory.
     let dir = match target {
         AliasSource::User => {
-            let (config_root, _) = match config_dir(Some(ConfigScope::Global)) {
-                Ok(resolved) => resolved,
-                Err(e) => {
-                    eprintln!("{} Could not resolve global config directory: {e}", "error:".red().bold());
-                    return;
-                }
-            };
+            let (config_root, _) = config_dir(Some(ConfigScope::Global))
+                .map_err(|e| format!("could not resolve global config directory: {e}"))?;
             if !config_root.exists() {
-                eprintln!(
-                    "{} the global config directory does not exist yet. Run {} first.",
-                    "error:".red().bold(),
+                return Err(format!(
+                    "the global config directory does not exist yet. run {} first.",
                     "dbt-assist setup --scope global".bold()
-                );
-                return;
+                )
+                .into());
             }
-            match user_aliases_dir() {
-                Ok(dir) => dir,
-                Err(e) => {
-                    eprintln!("{} Could not resolve user aliases directory: {e}", "error:".red().bold());
-                    return;
-                }
-            }
+            user_aliases_dir().map_err(|e| format!("could not resolve user aliases directory: {e}"))?
         }
         AliasSource::Project => project_aliases_dir(&cwd),
         AliasSource::Predefined => {
-            eprintln!(
-                "{} predefined aliases are bundled and cannot be created.",
-                "error:".red().bold()
-            );
-            return;
+            return Err("predefined aliases are bundled and cannot be created.".into());
         }
     };
 
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("{} Could not create {}: {e}", "error:".red().bold(), dir.display());
-        return;
-    }
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
 
     let alias = Alias {
         select,
         exclude: exclude.filter(|s| !s.is_empty()),
         full_refresh,
     };
-    let yaml = match serde_yml::to_string(&alias) {
-        Ok(yaml) => yaml,
-        Err(e) => {
-            eprintln!("{} Could not serialize alias: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let yaml = serde_yml::to_string(&alias).map_err(|e| format!("could not serialize alias: {e}"))?;
     let path = dir.join(format!("{name}.yml"));
-    if let Err(e) = std::fs::write(&path, yaml) {
-        eprintln!("{} Could not write {}: {e}", "error:".red().bold(), path.display());
-        return;
-    }
+    std::fs::write(&path, yaml).map_err(|e| format!("could not write {}: {e}", path.display()))?;
     vprintln!("Wrote {}", path.display());
 
     println!(
-        "{} alias {} created in {}.",
+        "{} Alias {} created in {}.",
         "✓".green().bold(),
         name.bold(),
         target.to_string().bold()
@@ -224,49 +170,42 @@ pub fn add(
         "  Run it with {}.",
         format!("dbt-assist jobs run {name} --source {target}").bold()
     );
+    Ok(())
 }
 
 /// `alias remove`: delete a user or project alias by name. Predefined aliases
 /// are immutable.
-pub fn remove(name: String, source: Option<AliasSource>) {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+pub fn remove(
+    name: String,
+    source: Option<AliasSource>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
-    let entries = match list_aliases(&ALL_SOURCES, &cwd) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let entries =
+        list_aliases(&ALL_SOURCES, &cwd).map_err(|e| format!("could not list aliases: {e}"))?;
     let matches = find_by_name(&entries, &name);
 
     if matches.is_empty() {
-        eprintln!("{} no alias named {} found.", "error:".red().bold(), name.bold());
-        return;
+        return Err(format!("no alias named {} found.", name.bold()).into());
     }
 
     // Collect the entries we're allowed to delete (predefined aliases are
     // bundled and immutable), narrowed to `--source` when given.
     let targets: Vec<&_> = match source {
         Some(src) => {
-            let found: Vec<&_> = matches.iter().filter(|e| e.source == src).copied().collect();
+            let found: Vec<&_> = matches
+                .iter()
+                .filter(|e| e.source == src)
+                .copied()
+                .collect();
             if found.is_empty() {
-                eprintln!(
-                    "{} no alias named {} found in {}.",
-                    "error:".red().bold(),
+                return Err(format!(
+                    "no alias named {} found in {}.",
                     name.bold(),
                     src.to_string().bold()
-                );
-                return;
+                )
+                .into());
             }
             found
         }
@@ -279,12 +218,11 @@ pub fn remove(name: String, source: Option<AliasSource>) {
 
     if targets.is_empty() {
         // The only matches were predefined.
-        eprintln!(
-            "{} {} is a predefined alias and cannot be removed.",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} is a predefined alias and cannot be removed.",
             name.bold()
-        );
-        return;
+        )
+        .into());
     }
 
     // Only confirm when more than one file would be deleted; a single match is
@@ -305,25 +243,34 @@ pub fn remove(name: String, source: Option<AliasSource>) {
             .unwrap_or(false);
         if !proceed {
             println!("{}", "Aliases not removed.".dimmed());
-            return;
+            return Ok(());
         }
     }
 
     for target in &targets {
         let Some(path) = &target.path else {
-            eprintln!("{} alias {} has no on-disk path.", "error:".red().bold(), name.bold());
+            eprintln!(
+                "{} alias {} has no on-disk path.",
+                "error:".red().bold(),
+                name.bold()
+            );
             continue;
         };
         match std::fs::remove_file(path) {
             Ok(()) => println!(
-                "{} alias {} removed from {}.",
+                "{} Alias {} removed from {}.",
                 "✓".green().bold(),
                 name.bold(),
                 target.source.to_string().bold()
             ),
             Err(e) => {
-                eprintln!("{} Could not remove {}: {e}", "error:".red().bold(), path.display())
+                eprintln!(
+                    "{} could not remove {}: {e}",
+                    "error:".red().bold(),
+                    path.display()
+                )
             }
         }
     }
+    Ok(())
 }

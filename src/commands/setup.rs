@@ -7,19 +7,14 @@ use dialoguer::{Confirm, Input, Password, Select};
 use std::env;
 use std::io::Write;
 
-pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
+pub fn setup(
+    test_only: bool,
+    scope: Option<ConfigScope>,
+) -> Result<(), Box<dyn std::error::Error>> {
     vprintln!("Verbose mode enabled");
 
-    let (disc_path, disc_scope) = match config_dir(None) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve config directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let (disc_path, disc_scope) =
+        config_dir(None).map_err(|e| format!("could not resolve config directory: {e}"))?;
     let disc_exists = disc_path.join("config.yaml").exists();
     vprintln!(
         "Discovered {disc_scope} config dir at {} (config.yaml exists: {disc_exists})",
@@ -32,39 +27,30 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         (None, false) => ask_user_for_scope(),
     };
 
-    let (target_path, _) = match config_dir(Some(target_scope)) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve {target_scope} config directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+    let (target_path, _) = config_dir(Some(target_scope))
+        .map_err(|e| format!("could not resolve {target_scope} config directory: {e}"))?;
     let target_yaml = target_path.join("config.yaml");
     let target_exists = target_yaml.exists();
 
     if test_only {
         vprintln!("Test-only mode: validating existing config without modifying it");
         if !target_exists {
-            eprintln!(
-                "{} No config at {}. Run `dbt-assist setup` first.",
-                "error:".red().bold(),
-                target_yaml.display().to_string().cyan()
-            );
-            return;
+            return Err(format!(
+                "no config at {}. run {} first.",
+                target_yaml.display().to_string().cyan(),
+                "dbt-assist setup".bold()
+            )
+            .into());
         }
         println!(
             "Testing {} config at {}",
             target_scope.to_string().bold(),
             target_yaml.display().to_string().cyan()
         );
-        match load_config(Some(target_scope)) {
-            Ok((config, _)) => test_config(&config),
-            Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
-        }
-        return;
+        let (config, _) =
+            load_config(Some(target_scope)).map_err(|e| format!("could not load config: {e}"))?;
+        test_config(&config);
+        return Ok(());
     }
 
     let verb = if target_exists { "Using" } else { "Creating" };
@@ -82,11 +68,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
             .unwrap_or(false);
         if !modify {
             println!("{}", "Keeping existing config.".dimmed());
-            match load_config(Some(target_scope)) {
-                Ok((config, _)) => test_config(&config),
-                Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
-            }
-            return;
+            let (config, _) = load_config(Some(target_scope))
+                .map_err(|e| format!("could not load config: {e}"))?;
+            test_config(&config);
+            return Ok(());
         }
     }
 
@@ -103,13 +88,8 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     };
 
     vprintln!("Saving {target_scope} config to {}", target_yaml.display());
-    let saved_scope = match save_config(&config, Some(target_scope)) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("{} Could not save config: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let saved_scope = save_config(&config, Some(target_scope))
+        .map_err(|e| format!("could not save config: {e}"))?;
     println!(
         "{} {} config saved to {}",
         "✓".green().bold(),
@@ -118,6 +98,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     );
 
     test_config(&config);
+    Ok(())
 }
 
 fn ask_user_for_scope() -> ConfigScope {
@@ -433,7 +414,7 @@ async fn check_dbt_connection(config: &AppConfig, sa_ok: bool) {
     if needs_sa && !sa_ok {
         println!(
             "{}\n    {}",
-            "skipped".yellow(),
+            "skipped".yellow().bold(),
             "service account check failed".dimmed()
         );
         return;
@@ -512,10 +493,10 @@ fn check_local_access(config: &AppConfig) {
 fn verify_local_dir(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let dir = crate::utils::expand_tilde(path);
     if !dir.exists() {
-        return Err(format!("Directory not found: {path}").into());
+        return Err(format!("directory not found: {path}").into());
     }
     if !dir.is_dir() {
-        return Err(format!("Not a directory: {path}").into());
+        return Err(format!("not a directory: {path}").into());
     }
     std::fs::read_dir(&dir)?; // surfaces permission errors as the `?` error
     Ok(())

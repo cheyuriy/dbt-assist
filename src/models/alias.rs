@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 
+use crate::errors::{EnvironmentError, ValidationError};
 use crate::models::config::{ConfigScope, config_dir};
 
 /// Predefined aliases bundled into the binary at compile time from the
@@ -60,7 +61,7 @@ fn is_yaml_ext(ext: &str) -> bool {
 }
 
 /// User aliases directory: `<global config dir>/aliases`.
-pub fn user_aliases_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn user_aliases_dir() -> Result<PathBuf, EnvironmentError> {
     let (dir, _) = config_dir(Some(ConfigScope::Global))?;
     Ok(dir.join("aliases"))
 }
@@ -75,7 +76,10 @@ fn read_predefined() -> Vec<AliasEntry> {
     let mut entries = Vec::new();
     for file in PREDEFINED.files() {
         let path = file.path();
-        let is_yaml = path.extension().and_then(|e| e.to_str()).is_some_and(is_yaml_ext);
+        let is_yaml = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_yaml_ext);
         if !is_yaml {
             continue;
         }
@@ -108,7 +112,10 @@ pub fn read_aliases_from_dir(dir: &Path, source: AliasSource) -> Vec<AliasEntry>
         if !path.is_file() {
             continue;
         }
-        let is_yaml = path.extension().and_then(|e| e.to_str()).is_some_and(is_yaml_ext);
+        let is_yaml = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_yaml_ext);
         if !is_yaml {
             continue;
         }
@@ -134,7 +141,7 @@ pub fn read_aliases_from_dir(dir: &Path, source: AliasSource) -> Vec<AliasEntry>
 pub fn list_aliases(
     sources: &[AliasSource],
     cwd: &Path,
-) -> Result<Vec<AliasEntry>, Box<dyn std::error::Error>> {
+) -> Result<Vec<AliasEntry>, EnvironmentError> {
     let mut entries = Vec::new();
     if sources.contains(&AliasSource::Predefined) {
         entries.extend(read_predefined());
@@ -151,8 +158,11 @@ pub fn list_aliases(
 }
 
 /// All sources, in precedence order.
-pub const ALL_SOURCES: [AliasSource; 3] =
-    [AliasSource::Predefined, AliasSource::User, AliasSource::Project];
+pub const ALL_SOURCES: [AliasSource; 3] = [
+    AliasSource::Predefined,
+    AliasSource::User,
+    AliasSource::Project,
+];
 
 /// Case-insensitive lookup of every entry matching `name`.
 pub fn find_by_name<'a>(entries: &'a [AliasEntry], name: &str) -> Vec<&'a AliasEntry> {
@@ -164,12 +174,12 @@ pub fn find_by_name<'a>(entries: &'a [AliasEntry], name: &str) -> Vec<&'a AliasE
 
 /// Validate that `name` is usable as a single alias filename: non-empty and
 /// free of path separators or extension dots.
-pub fn validate_alias_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn validate_alias_name(name: &str) -> Result<(), ValidationError> {
     if name.trim().is_empty() {
-        return Err("alias name must not be empty".into());
+        return Err(ValidationError::EmptyName { kind: "alias" });
     }
     if name.contains('/') || name.contains('\\') || name.contains('.') {
-        return Err("alias name must not contain '/', '\\', or '.'".into());
+        return Err(ValidationError::IllegalChars { kind: "alias" });
     }
     Ok(())
 }

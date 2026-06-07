@@ -16,73 +16,34 @@ pub fn manifest(
     scope: Option<ConfigScope>,
     project_name: Option<String>,
     manifest_dir: Option<String>,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} `manifest` must be run from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} must be run from a dbt project directory (no {} found here).",
+            "manifest".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
-    let (config, resolved) = match load_config(scope) {
-        Ok(loaded) => loaded,
-        Err(e) => {
-            eprintln!("{} Could not load config: {e}", "error:".red().bold());
-            return;
-        }
-    };
+    let (config, resolved) = load_config(scope).map_err(|e| format!("could not load config: {e}"))?;
     vprintln!("Loaded {resolved} config");
 
     // Resolve the destination directory and ensure it exists.
     let dest_dir = cwd.join(manifest_dir.as_deref().unwrap_or(".manifest"));
-    if let Err(e) = fs::create_dir_all(&dest_dir) {
-        eprintln!(
-            "{} Could not create {}: {e}",
-            "error:".red().bold(),
-            dest_dir.display()
-        );
-        return;
-    }
+    fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("could not create {}: {e}", dest_dir.display()))?;
     let dest = dest_dir.join("manifest.json");
 
     let source_modified = match &config.manifest_storage {
-        ManifestStorage::Local { path } => match copy_local(path, &dest) {
-            Ok(modified) => modified,
-            Err(e) => {
-                eprintln!("{} {e}", "error:".red().bold());
-                return;
-            }
-        },
+        ManifestStorage::Local { path } => copy_local(path, &dest)?,
         ManifestStorage::GCS { bucket, path, .. } => {
-            let project = match resolve_project_name(project_name.as_deref(), &cwd) {
-                Ok(name) => name,
-                Err(e) => {
-                    eprintln!("{} {e}", "error:".red().bold());
-                    return;
-                }
-            };
+            let project = resolve_project_name(project_name.as_deref(), &cwd)?;
             let object = manifest_object_key(path, &project);
             vprintln!("Downloading gs://{bucket}/{object}");
-            match download_gcs(&config, bucket, &object, &dest) {
-                Ok(modified) => modified,
-                Err(e) => {
-                    eprintln!("{} {e}", "error:".red().bold());
-                    return;
-                }
-            }
+            download_gcs(&config, bucket, &object, &dest)?
         }
     };
 
@@ -93,14 +54,20 @@ pub fn manifest(
         "{} Manifest refreshed. State for the \"defer\" function is updated.",
         "✓".green().bold()
     );
+    Ok(())
 }
 
 /// Copies `<path>/manifest.json` to `dest`, returning the source's last-modified
 /// time (captured before the copy) so its age can be reported.
-fn copy_local(path: &str, dest: &Path) -> Result<Option<SystemTime>, Box<dyn std::error::Error>> {
+fn copy_local(
+    path: &str,
+    dest: &Path,
+) -> Result<Option<SystemTime>, crate::errors::EnvironmentError> {
     let src = crate::utils::expand_tilde(path).join("manifest.json");
     if !src.is_file() {
-        return Err(format!("Manifest not found at {}", src.display()).into());
+        return Err(crate::errors::EnvironmentError::ManifestNotFound(
+            src.display().to_string(),
+        ));
     }
     let modified = fs::metadata(&src)?.modified().ok();
     fs::copy(&src, dest)?;
@@ -119,8 +86,9 @@ fn download_gcs(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let (bytes, updated) =
-        rt.block_on(crate::gcp::client::download_manifest(config, bucket, object))?;
+    let (bytes, updated) = rt.block_on(crate::gcp::client::download_manifest(
+        config, bucket, object,
+    ))?;
     fs::write(dest, bytes)?;
     Ok(updated)
 }
@@ -135,8 +103,12 @@ fn resolve_project_name(
         return Ok(name.to_string());
     }
     crate::utils::read_project_name(cwd).ok_or_else(|| {
-        "Could not determine project name; pass --project-name or set `name` in dbt_project.yml"
-            .into()
+        format!(
+            "could not determine project name; pass {} or set `name` in {}",
+            "--project-name".bold(),
+            "dbt_project.yml".bold()
+        )
+        .into()
     })
 }
 
@@ -167,7 +139,7 @@ fn report_age(modified: Option<SystemTime>) {
     println!("Manifest is {hours} hour(s) old.");
     if hours >= 24 {
         println!(
-            "{} The manifest is over 24 hours old and may be out of date.",
+            "{} the manifest is over 24 hours old and may be out of date.",
             "warning:".yellow().bold()
         );
     }
@@ -192,10 +164,7 @@ mod tests {
     fn resolve_project_name_falls_back_to_yaml() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("dbt_project.yml"), "name: from_yaml\n").unwrap();
-        assert_eq!(
-            resolve_project_name(None, tmp.path()).unwrap(),
-            "from_yaml"
-        );
+        assert_eq!(resolve_project_name(None, tmp.path()).unwrap(), "from_yaml");
     }
 
     #[test]

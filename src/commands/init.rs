@@ -10,25 +10,17 @@ use crate::vprintln;
 /// Initialize the current dbt project: scaffold the hidden working directories
 /// dbt-assist relies on and, optionally, wire up local VSCode settings for the
 /// "Power User for dbt" extension (deferral, lineage panel, jinja associations).
-pub fn init() {
-    let cwd = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!(
-                "{} Could not resolve current directory: {e}",
-                "error:".red().bold()
-            );
-            return;
-        }
-    };
+pub fn init() -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("could not resolve current directory: {e}"))?;
 
     if !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} `init` must be run from a dbt project directory (no {} found here).",
-            "error:".red().bold(),
+        return Err(format!(
+            "{} must be run from a dbt project directory (no {} found here).",
+            "init".bold(),
             "dbt_project.yml".bold()
-        );
-        return;
+        )
+        .into());
     }
 
     // Scaffold the hidden working directories.
@@ -36,19 +28,12 @@ pub fn init() {
         (".manifest", "to store manifest.json"),
         (".aliases", "to store dbt command aliases"),
         (".templates", "to store dbt model templates"),
+        (".logs", "to store saved run logs"),
+        (".dbt-assist", "to store local dbt-assist config"),
     ] {
         let dir = cwd.join(name);
-        match fs::create_dir_all(&dir) {
-            Ok(()) => vprintln!("Created {} ({})", dir.display(), purpose),
-            Err(e) => {
-                eprintln!(
-                    "{} Could not create {}: {e}",
-                    "error:".red().bold(),
-                    dir.display()
-                );
-                return;
-            }
-        }
+        fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+        vprintln!("Created {} ({})", dir.display(), purpose);
     }
 
     let configure = Confirm::new()
@@ -76,6 +61,7 @@ pub fn init() {
         "✓".green().bold(),
         "dbt-assist manifest".bold()
     );
+    Ok(())
 }
 
 /// Create or patch `.vscode/settings.json`, preserving any existing settings.
@@ -89,7 +75,7 @@ fn configure_vscode_settings(cwd: &Path) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!(
-                    "{} Could not read {}: {e}",
+                    "{} could not read {}: {e}",
                     "error:".red().bold(),
                     settings_path.display()
                 );
@@ -100,7 +86,7 @@ fn configure_vscode_settings(cwd: &Path) {
             Ok(value) => value,
             Err(e) => {
                 println!(
-                    "{} Could not parse {} as JSON ({e}). It may contain comments or \
+                    "{} could not parse {} as JSON ({e}). It may contain comments or \
                      trailing commas; please add the dbt-assist settings manually.",
                     "warning:".yellow().bold(),
                     settings_path.display()
@@ -128,7 +114,7 @@ fn configure_vscode_settings(cwd: &Path) {
     let sub_projects = find_sub_projects(cwd);
     if !sub_projects.is_empty() {
         println!(
-            "{} Found {} nested dbt sub-project(s). Setting these up is not supported yet; \
+            "{} found {} nested dbt sub-project(s). Setting these up is not supported yet; \
              configure them manually in {}:",
             "note:".yellow().bold(),
             sub_projects.len(),
@@ -143,7 +129,7 @@ fn configure_vscode_settings(cwd: &Path) {
         && let Err(e) = fs::create_dir_all(parent)
     {
         eprintln!(
-            "{} Could not create {}: {e}",
+            "{} could not create {}: {e}",
             "error:".red().bold(),
             parent.display()
         );
@@ -154,7 +140,7 @@ fn configure_vscode_settings(cwd: &Path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!(
-                "{} Could not serialize settings: {e}",
+                "{} could not serialize settings: {e}",
                 "error:".red().bold()
             );
             return;
@@ -163,7 +149,7 @@ fn configure_vscode_settings(cwd: &Path) {
     match fs::write(&settings_path, serialized) {
         Ok(()) => vprintln!("Wrote {}", settings_path.display()),
         Err(e) => eprintln!(
-            "{} Could not write {}: {e}",
+            "{} could not write {}: {e}",
             "error:".red().bold(),
             settings_path.display()
         ),
@@ -171,7 +157,14 @@ fn configure_vscode_settings(cwd: &Path) {
 }
 
 /// Folders dbt-assist creates that should not be committed.
-const GITIGNORE_ENTRIES: [&str; 4] = [".aliases", ".manifest", ".templates", ".vscode"];
+const GITIGNORE_ENTRIES: [&str; 6] = [
+    ".aliases",
+    ".dbt-assist",
+    ".logs",
+    ".manifest",
+    ".templates",
+    ".vscode",
+];
 
 /// Append dbt-assist's created folders to `.gitignore` (creating it if needed),
 /// skipping any entry that is already listed.
@@ -183,7 +176,7 @@ fn configure_gitignore(cwd: &Path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => {
             eprintln!(
-                "{} Could not read {}: {e}",
+                "{} could not read {}: {e}",
                 "error:".red().bold(),
                 gitignore_path.display()
             );
@@ -191,8 +184,7 @@ fn configure_gitignore(cwd: &Path) {
         }
     };
 
-    let already: std::collections::HashSet<&str> =
-        existing.lines().map(|l| l.trim()).collect();
+    let already: std::collections::HashSet<&str> = existing.lines().map(|l| l.trim()).collect();
     let missing: Vec<&str> = GITIGNORE_ENTRIES
         .iter()
         .copied()
@@ -200,7 +192,10 @@ fn configure_gitignore(cwd: &Path) {
         .collect();
 
     if missing.is_empty() {
-        vprintln!("All folders already present in {}", gitignore_path.display());
+        vprintln!(
+            "All folders already present in {}",
+            gitignore_path.display()
+        );
         return;
     }
 
@@ -220,7 +215,7 @@ fn configure_gitignore(cwd: &Path) {
             gitignore_path.display()
         ),
         Err(e) => eprintln!(
-            "{} Could not write {}: {e}",
+            "{} could not write {}: {e}",
             "error:".red().bold(),
             gitignore_path.display()
         ),
@@ -357,7 +352,10 @@ mod tests {
         configure_gitignore(tmp.path());
         let contents = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
         for entry in GITIGNORE_ENTRIES {
-            assert!(contents.lines().any(|l| l.trim() == entry), "missing {entry}");
+            assert!(
+                contents.lines().any(|l| l.trim() == entry),
+                "missing {entry}"
+            );
         }
     }
 
@@ -373,10 +371,16 @@ mod tests {
         // Unrelated entry preserved.
         assert!(contents.lines().any(|l| l.trim() == "target/"));
         // `.manifest` not duplicated.
-        assert_eq!(contents.lines().filter(|l| l.trim() == ".manifest").count(), 1);
+        assert_eq!(
+            contents.lines().filter(|l| l.trim() == ".manifest").count(),
+            1
+        );
         // The other three were appended.
         for entry in [".aliases", ".templates", ".vscode"] {
-            assert!(contents.lines().any(|l| l.trim() == entry), "missing {entry}");
+            assert!(
+                contents.lines().any(|l| l.trim() == entry),
+                "missing {entry}"
+            );
         }
     }
 }

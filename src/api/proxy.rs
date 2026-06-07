@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::errors::ProxyError;
 use crate::models::runs::{RunStatus, RunsQueue};
 
 /// How to authorize a request to a proxy. The normal proxy and the GCP Cloud
@@ -56,11 +57,13 @@ struct ErrorBody {
 
 /// Builds an error from a non-success response, including the proxy's
 /// `{"message": ...}` body when present and falling back to just the status.
-async fn error_for(context: &str, resp: reqwest::Response) -> Box<dyn std::error::Error> {
+async fn error_for(context: &str, resp: reqwest::Response) -> ProxyError {
     let status = resp.status();
     match resp.json::<ErrorBody>().await {
-        Ok(body) => format!("{context} failed with status {status}: {}", body.message).into(),
-        Err(_) => format!("{context} failed with status {status}").into(),
+        Ok(body) => {
+            ProxyError::BadStatus(format!("{context} failed with status {status}: {}", body.message))
+        }
+        Err(_) => ProxyError::BadStatus(format!("{context} failed with status {status}")),
     }
 }
 
@@ -70,7 +73,7 @@ pub(crate) async fn get_runs_queue(
     base_url: &str,
     auth: ProxyAuth,
     project_name: &str,
-) -> Result<RunsQueue, Box<dyn std::error::Error>> {
+) -> Result<RunsQueue, ProxyError> {
     let url = format!("{}/jobs/manual/queue", base_url.trim_end_matches('/'));
     let resp = auth
         .apply(http.get(url).json(&QueueBody { project_name }))
@@ -93,7 +96,7 @@ pub(crate) async fn create_run(
     exclude: Option<&str>,
     full_refresh: Option<bool>,
     turbo: bool,
-) -> Result<i64, Box<dyn std::error::Error>> {
+) -> Result<i64, ProxyError> {
     let url = format!("{}/runs/manual", base_url.trim_end_matches('/'));
     let body = CreateRunBody {
         select,
@@ -117,7 +120,7 @@ pub(crate) async fn check_run_status(
     base_url: &str,
     auth: ProxyAuth,
     run_id: &str,
-) -> Result<RunStatus, Box<dyn std::error::Error>> {
+) -> Result<RunStatus, ProxyError> {
     let url = format!("{}/runs/{run_id}", base_url.trim_end_matches('/'));
     let resp = auth.apply(http.get(url)).send().await?;
     if resp.status() != reqwest::StatusCode::OK {
@@ -132,7 +135,7 @@ pub(crate) async fn cancel_run(
     base_url: &str,
     auth: ProxyAuth,
     run_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), ProxyError> {
     let url = format!("{}/runs/{run_id}", base_url.trim_end_matches('/'));
     let resp = auth.apply(http.delete(url)).send().await?;
     if resp.status() != reqwest::StatusCode::OK {

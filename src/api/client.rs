@@ -4,13 +4,15 @@ use super::direct::DirectClient;
 use super::gcp_function_proxy::GcpFunctionProxyClient;
 use super::normal_proxy::NormalProxyClient;
 
-/// Treats a `200 OK` response as success for a ping; any other status is an
-/// error. Shared by the connectors' `ping` implementations.
-pub(crate) fn check_ping_ok(resp: reqwest::Response) -> Result<(), Box<dyn std::error::Error>> {
-    if resp.status() == reqwest::StatusCode::OK {
+/// Treats a `200 OK` response as success for a ping; any other status yields the
+/// offending status code. Shared by the connectors' `ping` implementations,
+/// which map that status into their own error type.
+pub(crate) fn check_ping_ok(resp: reqwest::Response) -> Result<(), reqwest::StatusCode> {
+    let status = resp.status();
+    if status == reqwest::StatusCode::OK {
         Ok(())
     } else {
-        Err(format!("ping failed with status {}", resp.status()).into())
+        Err(status)
     }
 }
 
@@ -248,7 +250,7 @@ mod tests {
             })
             .await;
         let resp = reqwest::get(server.url("/ping")).await.expect("request");
-        assert!(check_ping_ok(resp).is_ok());
+        assert_eq!(check_ping_ok(resp), Ok(()));
     }
 
     #[tokio::test]
@@ -261,6 +263,6 @@ mod tests {
             })
             .await;
         let resp = reqwest::get(server.url("/ping")).await.expect("request");
-        assert!(check_ping_ok(resp).is_err());
+        assert_eq!(check_ping_ok(resp), Err(reqwest::StatusCode::NOT_FOUND));
     }
 }

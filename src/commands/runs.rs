@@ -8,25 +8,103 @@ use crate::models::config::{AppConfig, ConfigScope, load_config};
 use crate::models::runs::RunStatus;
 use crate::vprintln;
 
-/// Resolve the dbt project name: the `--project-name` override wins; otherwise
-/// read `name:` from `dbt_project.yml`, which requires running inside a dbt
-/// project.
-fn resolve_project_name(
-    override_: Option<String>,
-    cwd: &Path,
-) -> Result<String, Box<dyn std::error::Error>> {
-    if let Some(name) = override_ {
-        return Ok(name);
+/// `runs queue`: fetch the run queue for the project and print it as a table.
+pub fn queue(
+    scope: Option<ConfigScope>,
+    project_name: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (project, api) = prepare(scope, project_name)?;
+
+    let queue = block_on(async { api.get_runs_queue(&project).await })?
+        .map_err(|e| format!("could not fetch runs: {e}"))?;
+
+    if queue.runs.is_empty() {
+        println!("{}", "No active or queued runs.".dimmed());
+        return Ok(());
     }
-    if !crate::utils::is_dbt_project(cwd) {
-        return Err(
-            "run inside a dbt project directory (no dbt_project.yml found here) or pass \
-             --project-name"
-                .into(),
-        );
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL).set_header(vec![
+        Cell::new("Run ID"),
+        Cell::new("Status"),
+        Cell::new("In run"),
+        Cell::new("In queue"),
+        Cell::new("Run by"),
+        Cell::new("Task"),
+    ]);
+
+    for run in &queue.runs {
+        table.add_row(vec![
+            Cell::new(run.id.to_string()),
+            Cell::new(run.status_label()),
+            Cell::new(&run.run_duration_humanized),
+            Cell::new(&run.queued_duration_humanized),
+            Cell::new(&run.trigger.cause),
+            Cell::new(run.task()),
+        ]);
     }
-    crate::utils::read_project_name(cwd)
-        .ok_or_else(|| "could not read `name:` from dbt_project.yml; pass --project-name".into())
+
+    println!("{table}");
+    Ok(())
+}
+
+/// `runs check`: fetch the status of `run_id`, print it as a table, and
+/// optionally print and/or save the per-step logs.
+pub fn check(
+    scope: Option<ConfigScope>,
+    project_name: Option<String>,
+    run_id: String,
+    logs_always: bool,
+    debug_logs: bool,
+    save_files: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+
+    if save_files && !crate::utils::is_dbt_project(&cwd) {
+        return Err(format!(
+            "{} writes to {}, so run inside a dbt project directory (no {} found here).",
+            "--save-files".bold(),
+            ".logs/".bold(),
+            "dbt_project.yml".bold()
+        )
+        .into());
+    }
+
+    let status = fetch_status(scope, project_name, &run_id)?;
+
+    let logs_dir = if save_files {
+        match save_logs(&cwd, &run_id, &status) {
+            Ok(dir) => Some(dir),
+            Err(e) => {
+                eprintln!("{} could not save logs: {e}", "warning:".yellow().bold());
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    println!("{}", build_status_table(&status, logs_dir.as_deref()));
+
+    if logs_always || status.is_failed() {
+        print_logs(&status, debug_logs);
+    }
+    Ok(())
+}
+
+/// `runs cancel`: cancel the run `run_id` within the project and confirm.
+pub fn cancel(
+    scope: Option<ConfigScope>,
+    project_name: Option<String>,
+    run_id: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (project, api) = prepare(scope, project_name)?;
+
+    block_on(async { api.cancel_run(&project, &run_id).await })?
+        .map_err(|e| format!("could not cancel run: {e}"))?;
+
+    println!("{} Run {} cancelled.", "✓".green().bold(), run_id.bold());
+    Ok(())
 }
 
 /// Shared setup for the runs subcommands: resolve cwd + project name, load the
@@ -56,85 +134,6 @@ pub(crate) fn block_on<F: std::future::Future>(
     Ok(rt.block_on(fut))
 }
 
-/// `runs queue`: fetch the run queue for the project and print it as a table.
-pub fn queue(scope: Option<ConfigScope>, project_name: Option<String>) {
-    let (project, api) = match prepare(scope, project_name) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    let result = match block_on(async { api.get_runs_queue(&project).await }) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    let queue = match result {
-        Ok(queue) => queue,
-        Err(e) => {
-            eprintln!("{} Could not fetch runs: {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    if queue.runs.is_empty() {
-        println!("{}", "No active or queued runs.".dimmed());
-        return;
-    }
-
-    let mut table = Table::new();
-    table.load_preset(UTF8_FULL).set_header(vec![
-        Cell::new("Run ID"),
-        Cell::new("Status"),
-        Cell::new("In run"),
-        Cell::new("In queue"),
-        Cell::new("Run by"),
-        Cell::new("Task"),
-    ]);
-
-    for run in &queue.runs {
-        table.add_row(vec![
-            Cell::new(run.id.to_string()),
-            Cell::new(run.status_label()),
-            Cell::new(&run.run_duration_humanized),
-            Cell::new(&run.queued_duration_humanized),
-            Cell::new(&run.trigger.cause),
-            Cell::new(run.task()),
-        ]);
-    }
-
-    println!("{table}");
-}
-
-/// `runs cancel`: cancel the run `run_id` within the project and confirm.
-pub fn cancel(scope: Option<ConfigScope>, project_name: Option<String>, run_id: String) {
-    let (project, api) = match prepare(scope, project_name) {
-        Ok(prepared) => prepared,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    let result = match block_on(async { api.cancel_run(&project, &run_id).await }) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    match result {
-        Ok(()) => println!("{}", format!("Run {run_id} cancelled.").green()),
-        Err(e) => eprintln!("{} Could not cancel run: {e}", "error:".red().bold()),
-    }
-}
-
 /// Fetch the status of a single run. Factored out of [`check`] so a future
 /// "watch in a loop" command can reuse it: it returns the typed [`RunStatus`]
 /// and prints nothing. Unwraps the runtime layer then the API layer (like
@@ -147,31 +146,6 @@ pub(crate) fn fetch_status(
     let (project, api) = prepare(scope, project_name)?;
     let status = block_on(async { api.check_run_status(&project, run_id).await })??;
     Ok(status)
-}
-
-/// Glyph reflecting a step's `status_humanized`.
-fn step_status_icon(status_humanized: &str) -> &'static str {
-    match status_humanized {
-        "Success" => "✓",
-        "Running" => "●",
-        "Error" => "✗",
-        _ => "?",
-    }
-}
-
-/// Glyph reflecting whether a log payload is present for a step.
-fn presence_icon(present: bool) -> &'static str {
-    if present { "✓" } else { "–" }
-}
-
-/// Join one glyph per step, space-separated, via `pick`.
-fn step_icons(status: &RunStatus, pick: impl Fn(&crate::models::runs::RunStep) -> &'static str) -> String {
-    status
-        .run_steps
-        .iter()
-        .map(&pick)
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Build the run-status table. Glyphs are left uncolored so `comfy_table`
@@ -207,14 +181,6 @@ pub(crate) fn build_status_table(status: &RunStatus, logs_dir: Option<&Path>) ->
     table
 }
 
-/// Replace characters that are awkward in filenames (path separators and
-/// whitespace) with underscores.
-fn sanitize_for_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c == '/' || c == '\\' || c.is_whitespace() { '_' } else { c })
-        .collect()
-}
-
 /// Save each step's logs to `.logs/<run_id>/`. Writes `logs_<index>_<name>.log`
 /// for normal logs and `debug_<index>_<name>.log` for debug logs, but only for
 /// steps that actually carry that payload. Returns the created directory.
@@ -222,7 +188,7 @@ pub(crate) fn save_logs(
     cwd: &Path,
     run_id: &str,
     status: &RunStatus,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+) -> Result<PathBuf, crate::errors::EnvironmentError> {
     let dir = cwd.join(".logs").join(run_id);
     std::fs::create_dir_all(&dir)?;
 
@@ -259,58 +225,74 @@ pub(crate) fn print_logs(status: &RunStatus, debug: bool) {
     }
 }
 
-/// `runs check`: fetch the status of `run_id`, print it as a table, and
-/// optionally print and/or save the per-step logs.
-pub fn check(
-    scope: Option<ConfigScope>,
-    project_name: Option<String>,
-    run_id: String,
-    logs_always: bool,
-    debug_logs: bool,
-    save_files: bool,
-) {
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
-
-    if save_files && !crate::utils::is_dbt_project(&cwd) {
-        eprintln!(
-            "{} --save-files writes to .logs/, so run inside a dbt project directory \
-             (no dbt_project.yml found here)",
-            "error:".red().bold()
-        );
-        return;
+/// Resolve the dbt project name: the `--project-name` override wins; otherwise
+/// read `name:` from `dbt_project.yml`, which requires running inside a dbt
+/// project.
+fn resolve_project_name(
+    override_: Option<String>,
+    cwd: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(name) = override_ {
+        return Ok(name);
     }
+    if !crate::utils::is_dbt_project(cwd) {
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here) or pass {}",
+            "dbt_project.yml".bold(),
+            "--project-name".bold()
+        )
+        .into());
+    }
+    crate::utils::read_project_name(cwd).ok_or_else(|| {
+        format!(
+            "could not read `name:` from {}; pass {}",
+            "dbt_project.yml".bold(),
+            "--project-name".bold()
+        )
+        .into()
+    })
+}
 
-    let status = match fetch_status(scope, project_name, &run_id) {
-        Ok(status) => status,
-        Err(e) => {
-            eprintln!("{} {e}", "error:".red().bold());
-            return;
-        }
-    };
+/// Glyph reflecting a step's `status_humanized`.
+fn step_status_icon(status_humanized: &str) -> &'static str {
+    match status_humanized {
+        "Success" => "✓",
+        "Running" => "●",
+        "Error" => "✗",
+        _ => "?",
+    }
+}
 
-    let logs_dir = if save_files {
-        match save_logs(&cwd, &run_id, &status) {
-            Ok(dir) => Some(dir),
-            Err(e) => {
-                eprintln!("{} Could not save logs: {e}", "warning:".yellow().bold());
-                None
+/// Glyph reflecting whether a log payload is present for a step.
+fn presence_icon(present: bool) -> &'static str {
+    if present { "✓" } else { "–" }
+}
+
+/// Join one glyph per step, space-separated, via `pick`.
+fn step_icons(
+    status: &RunStatus,
+    pick: impl Fn(&crate::models::runs::RunStep) -> &'static str,
+) -> String {
+    status
+        .run_steps
+        .iter()
+        .map(&pick)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Replace characters that are awkward in filenames (path separators and
+/// whitespace) with underscores.
+fn sanitize_for_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c == '/' || c == '\\' || c.is_whitespace() {
+                '_'
+            } else {
+                c
             }
-        }
-    } else {
-        None
-    };
-
-    println!("{}", build_status_table(&status, logs_dir.as_deref()));
-
-    if logs_always || status.is_failed() {
-        print_logs(&status, debug_logs);
-    }
+        })
+        .collect()
 }
 
 #[cfg(test)]

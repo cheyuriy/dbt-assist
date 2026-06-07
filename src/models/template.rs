@@ -6,6 +6,7 @@ use include_dir::{Dir, include_dir};
 use minijinja::{AutoEscape, Environment, UndefinedBehavior};
 use regex::Regex;
 
+use crate::errors::{EnvironmentError, ValidationError};
 use crate::models::config::{ConfigScope, config_dir};
 
 /// Predefined templates bundled into the binary at compile time from the
@@ -55,8 +56,11 @@ pub struct ParsedTemplate {
 }
 
 /// All sources, in precedence order.
-pub const ALL_SOURCES: [TemplateSource; 3] =
-    [TemplateSource::Predefined, TemplateSource::User, TemplateSource::Project];
+pub const ALL_SOURCES: [TemplateSource; 3] = [
+    TemplateSource::Predefined,
+    TemplateSource::User,
+    TemplateSource::Project,
+];
 
 /// True if `ext` (lowercased) is a Jinja extension we recognize.
 fn is_jinja_ext(ext: &str) -> bool {
@@ -64,7 +68,7 @@ fn is_jinja_ext(ext: &str) -> bool {
 }
 
 /// User templates directory: `<global config dir>/templates`.
-pub fn user_templates_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn user_templates_dir() -> Result<PathBuf, EnvironmentError> {
     let (dir, _) = config_dir(Some(ConfigScope::Global))?;
     Ok(dir.join("templates"))
 }
@@ -79,7 +83,10 @@ fn read_predefined() -> Vec<TemplateEntry> {
     let mut entries = Vec::new();
     for file in PREDEFINED.files() {
         let path = file.path();
-        let is_jinja = path.extension().and_then(|e| e.to_str()).is_some_and(is_jinja_ext);
+        let is_jinja = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_jinja_ext);
         if !is_jinja {
             continue;
         }
@@ -112,7 +119,10 @@ pub fn read_templates_from_dir(dir: &Path, source: TemplateSource) -> Vec<Templa
         if !path.is_file() {
             continue;
         }
-        let is_jinja = path.extension().and_then(|e| e.to_str()).is_some_and(is_jinja_ext);
+        let is_jinja = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_jinja_ext);
         if !is_jinja {
             continue;
         }
@@ -138,7 +148,7 @@ pub fn read_templates_from_dir(dir: &Path, source: TemplateSource) -> Vec<Templa
 pub fn list_templates(
     sources: &[TemplateSource],
     cwd: &Path,
-) -> Result<Vec<TemplateEntry>, Box<dyn std::error::Error>> {
+) -> Result<Vec<TemplateEntry>, EnvironmentError> {
     let mut entries = Vec::new();
     if sources.contains(&TemplateSource::Predefined) {
         entries.extend(read_predefined());
@@ -164,12 +174,12 @@ pub fn find_by_name<'a>(entries: &'a [TemplateEntry], name: &str) -> Vec<&'a Tem
 
 /// Validate that `name` is usable as a single template name: non-empty and free
 /// of path separators or extension dots.
-pub fn validate_template_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn validate_template_name(name: &str) -> Result<(), ValidationError> {
     if name.trim().is_empty() {
-        return Err("template name must not be empty".into());
+        return Err(ValidationError::EmptyName { kind: "template" });
     }
     if name.contains('/') || name.contains('\\') || name.contains('.') {
-        return Err("template name must not contain '/', '\\', or '.'".into());
+        return Err(ValidationError::IllegalChars { kind: "template" });
     }
     Ok(())
 }
@@ -180,18 +190,17 @@ pub fn validate_template_name(name: &str) -> Result<(), Box<dyn std::error::Erro
 static OUTPUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)\{%-?\s*output\s+(?:'([^']*)'|"([^"]*)")\s*-?%\}"#).unwrap()
 });
-static DOCS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)\{%-?\s*docs\s*-?%\}(.*?)\{%-?\s*enddocs\s*-?%\}").unwrap()
-});
+static DOCS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\{%-?\s*docs\s*-?%\}(.*?)\{%-?\s*enddocs\s*-?%\}").unwrap());
 static DOCS_OPEN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{%-?\s*docs\s*-?%\}").unwrap());
 
 /// Split a template into its `{% docs %}` block, `{% output %}` path expression,
 /// and the remaining renderable body.
-pub fn parse_template(raw: &str) -> Result<ParsedTemplate, Box<dyn std::error::Error>> {
+pub fn parse_template(raw: &str) -> Result<ParsedTemplate, ValidationError> {
     let outputs: Vec<_> = OUTPUT_RE.captures_iter(raw).collect();
     if outputs.len() > 1 {
-        return Err("template defines more than one {% output %} tag".into());
+        return Err(ValidationError::MultipleOutput);
     }
     let output = outputs.first().map(|c| {
         // Either the single-quoted (group 1) or double-quoted (group 2) capture.
@@ -203,13 +212,13 @@ pub fn parse_template(raw: &str) -> Result<ParsedTemplate, Box<dyn std::error::E
 
     let docs_matches: Vec<_> = DOCS_RE.captures_iter(raw).collect();
     if docs_matches.len() > 1 {
-        return Err("template defines more than one {% docs %} block".into());
+        return Err(ValidationError::MultipleDocs);
     }
     let docs = match docs_matches.first() {
         Some(c) => Some(c[1].trim().to_string()),
         None => {
             if DOCS_OPEN_RE.is_match(raw) {
-                return Err("{% docs %} block is not closed with {% enddocs %}".into());
+                return Err(ValidationError::UnclosedDocs);
             }
             None
         }
@@ -229,12 +238,11 @@ pub fn parse_template(raw: &str) -> Result<ParsedTemplate, Box<dyn std::error::E
 pub fn render_str(
     source: &str,
     vars: &BTreeMap<String, String>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, ValidationError> {
     let mut env = Environment::new();
     env.set_auto_escape_callback(|_| AutoEscape::None);
     env.set_undefined_behavior(UndefinedBehavior::Strict);
-    env.render_str(source, vars)
-        .map_err(|e| format!("template render failed: {e}").into())
+    env.render_str(source, vars).map_err(ValidationError::Render)
 }
 
 #[cfg(test)]
@@ -306,13 +314,16 @@ mod tests {
     fn parse_output_keeps_interpolation_raw() {
         let parsed =
             parse_template("{% output 'models/{{dataset}}/{{table}}.sql' %}\nbody").unwrap();
-        assert_eq!(parsed.output.as_deref(), Some("models/{{dataset}}/{{table}}.sql"));
+        assert_eq!(
+            parsed.output.as_deref(),
+            Some("models/{{dataset}}/{{table}}.sql")
+        );
     }
 
     #[test]
     fn parse_accepts_trim_markers() {
-        let parsed = parse_template("{%- output 'x.sql' -%}\n{%- docs -%}d{%- enddocs -%}\nbody")
-            .unwrap();
+        let parsed =
+            parse_template("{%- output 'x.sql' -%}\n{%- docs -%}d{%- enddocs -%}\nbody").unwrap();
         assert_eq!(parsed.output.as_deref(), Some("x.sql"));
         assert_eq!(parsed.docs.as_deref(), Some("d"));
     }

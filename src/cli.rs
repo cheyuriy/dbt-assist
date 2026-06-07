@@ -4,6 +4,11 @@ use crate::models::alias::AliasSource;
 use crate::models::config::ConfigScope;
 use crate::models::template::TemplateSource;
 
+// For many arguments, we implement a custom enum to restrict the possible values, provide better help messages and separate concerns.
+// We then convert these enums into the internal types used by the rest of the codebase
+// (e.g. `ConfigScope`, `AliasSource`, `TemplateSource`) using `From` trait implementations.
+
+/// Scopes for configuration and other entities, selectable on the CLI (local or global).
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum ScopeArg {
     Local,

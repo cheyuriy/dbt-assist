@@ -1,5 +1,6 @@
 use super::client::{DbtApiClient, check_ping_ok};
 use super::proxy::{self, ProxyAuth};
+use crate::errors::NormalProxyError;
 
 /// Plain proxy connection: requests go to the user's proxy `url`. When both a
 /// `username` and `password` are set they are sent as HTTP `Basic` auth;
@@ -44,13 +45,17 @@ impl DbtApiClient for NormalProxyClient {
         let url = format!("{}/ping", self.url.trim_end_matches('/'));
         let resp = self.auth().apply(self.http.get(url)).send().await?;
         check_ping_ok(resp)
+            .map_err(|status| NormalProxyError::BadStatus(format!("ping failed with status {status}")))?;
+        Ok(())
     }
 
     async fn get_runs_queue(
         &self,
         project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
-        proxy::get_runs_queue(&self.http, &self.url, self.auth(), project_name).await
+        Ok(proxy::get_runs_queue(&self.http, &self.url, self.auth(), project_name)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 
     async fn create_run(
@@ -61,7 +66,7 @@ impl DbtApiClient for NormalProxyClient {
         full_refresh: Option<bool>,
         turbo: bool,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        proxy::create_run(
+        Ok(proxy::create_run(
             &self.http,
             &self.url,
             self.auth(),
@@ -72,6 +77,7 @@ impl DbtApiClient for NormalProxyClient {
             turbo,
         )
         .await
+        .map_err(NormalProxyError::from)?)
     }
 
     async fn check_run_status(
@@ -79,7 +85,9 @@ impl DbtApiClient for NormalProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
-        proxy::check_run_status(&self.http, &self.url, self.auth(), run_id).await
+        Ok(proxy::check_run_status(&self.http, &self.url, self.auth(), run_id)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 
     async fn cancel_run(
@@ -87,7 +95,9 @@ impl DbtApiClient for NormalProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        proxy::cancel_run(&self.http, &self.url, self.auth(), run_id).await
+        Ok(proxy::cancel_run(&self.http, &self.url, self.auth(), run_id)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 }
 
@@ -105,7 +115,12 @@ mod tests {
             Some((u, p)) => (Some(u.to_string()), Some(p.to_string())),
             None => (None, None),
         };
-        NormalProxyClient::new(reqwest::Client::new(), server.base_url(), username, password)
+        NormalProxyClient::new(
+            reqwest::Client::new(),
+            server.base_url(),
+            username,
+            password,
+        )
     }
 
     /// True when the request carries no `Authorization` header (case-insensitive).
@@ -183,12 +198,19 @@ mod tests {
                         "full_refresh": true,
                         "turbo": false,
                     }));
-                then.status(201).json_body(serde_json::json!({"run_id": 1234}));
+                then.status(201)
+                    .json_body(serde_json::json!({"run_id": 1234}));
             })
             .await;
 
         let result = client(&server, Some(("user", "pass")))
-            .create_run("analytics", "tag:nightly", Some("model_x"), Some(true), false)
+            .create_run(
+                "analytics",
+                "tag:nightly",
+                Some("model_x"),
+                Some(true),
+                false,
+            )
             .await;
 
         assert_eq!(result.expect("create run"), 1234);
@@ -200,12 +222,14 @@ mod tests {
         let server = MockServer::start_async().await;
         let mock = server
             .mock_async(|when, then| {
-                when.method(POST).path("/runs/manual").json_body(serde_json::json!({
-                    "select": "*",
-                    "project_name": "analytics",
-                    "full_refresh": null,
-                    "turbo": true,
-                }));
+                when.method(POST)
+                    .path("/runs/manual")
+                    .json_body(serde_json::json!({
+                        "select": "*",
+                        "project_name": "analytics",
+                        "full_refresh": null,
+                        "turbo": true,
+                    }));
                 then.status(201).json_body(serde_json::json!({"run_id": 7}));
             })
             .await;
@@ -224,7 +248,8 @@ mod tests {
         server
             .mock_async(|when, then| {
                 when.method(POST).path("/runs/manual");
-                then.status(500).json_body(serde_json::json!({"message": "boom"}));
+                then.status(500)
+                    .json_body(serde_json::json!({"message": "boom"}));
             })
             .await;
 
@@ -326,7 +351,8 @@ mod tests {
         server
             .mock_async(|when, then| {
                 when.method(DELETE).path("/runs/9");
-                then.status(404).json_body(serde_json::json!({"message": "not found"}));
+                then.status(404)
+                    .json_body(serde_json::json!({"message": "not found"}));
             })
             .await;
 
