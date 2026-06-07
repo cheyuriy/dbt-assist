@@ -101,59 +101,6 @@ pub fn run(
     );
 }
 
-/// Resolve `name` to exactly one alias entry, disambiguating by `source`.
-/// Prints a user-facing error and returns `Err(())` when the name is missing,
-/// not present in the requested source, or ambiguous across sources without a
-/// `source` to narrow it. Mirrors `templates::resolve_one`.
-fn resolve_alias<'a>(
-    entries: &'a [AliasEntry],
-    name: &str,
-    source: Option<AliasSource>,
-) -> Result<&'a AliasEntry, ()> {
-    let matches = find_by_name(entries, name);
-    if matches.is_empty() {
-        eprintln!(
-            "{} no alias named {} found.",
-            "error:".red().bold(),
-            name.bold()
-        );
-        return Err(());
-    }
-
-    if let Some(src) = source {
-        return match matches.iter().find(|e| e.source == src) {
-            Some(entry) => Ok(entry),
-            None => {
-                eprintln!(
-                    "{} no alias named {} found in {}.",
-                    "error:".red().bold(),
-                    name.bold(),
-                    src.to_string().bold()
-                );
-                Err(())
-            }
-        };
-    }
-
-    if matches.len() > 1 {
-        let where_str = matches
-            .iter()
-            .map(|e| e.source.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!(
-            "{} alias {} exists in multiple sources ({}). pass {} to disambiguate.",
-            "error:".red().bold(),
-            name.bold(),
-            where_str.bold(),
-            "--source".bold()
-        );
-        return Err(());
-    }
-
-    Ok(matches[0])
-}
-
 /// `jobs manual`: create a one-off run that builds the selected models on the
 /// production job, then (with `--watch`) poll it to completion.
 #[allow(clippy::too_many_arguments)]
@@ -259,6 +206,59 @@ pub fn manual(
     if logs_always || final_status.is_failed() {
         runs::print_logs(&final_status, debug_logs);
     }
+}
+
+/// Resolve `name` to exactly one alias entry, disambiguating by `source`.
+/// Prints a user-facing error and returns `Err(())` when the name is missing,
+/// not present in the requested source, or ambiguous across sources without a
+/// `source` to narrow it. Mirrors `templates::resolve_one`.
+fn resolve_alias<'a>(
+    entries: &'a [AliasEntry],
+    name: &str,
+    source: Option<AliasSource>,
+) -> Result<&'a AliasEntry, ()> {
+    let matches = find_by_name(entries, name);
+    if matches.is_empty() {
+        eprintln!(
+            "{} no alias named {} found.",
+            "error:".red().bold(),
+            name.bold()
+        );
+        return Err(());
+    }
+
+    if let Some(src) = source {
+        return match matches.iter().find(|e| e.source == src) {
+            Some(entry) => Ok(entry),
+            None => {
+                eprintln!(
+                    "{} no alias named {} found in {}.",
+                    "error:".red().bold(),
+                    name.bold(),
+                    src.to_string().bold()
+                );
+                Err(())
+            }
+        };
+    }
+
+    if matches.len() > 1 {
+        let where_str = matches
+            .iter()
+            .map(|e| e.source.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "{} alias {} exists in multiple sources ({}). pass {} to disambiguate.",
+            "error:".red().bold(),
+            name.bold(),
+            where_str.bold(),
+            "--source".bold()
+        );
+        return Err(());
+    }
+
+    Ok(matches[0])
 }
 
 /// Confirm an action, short-circuiting to `true` when `--yes` was passed.
