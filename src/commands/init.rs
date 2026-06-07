@@ -15,7 +15,7 @@ pub fn init() {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -24,8 +24,9 @@ pub fn init() {
 
     if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} `init` must be run from a dbt project directory (no {} found here).",
+            "{} {} must be run from a dbt project directory (no {} found here).",
             "error:".red().bold(),
+            "init".bold(),
             "dbt_project.yml".bold()
         );
         return;
@@ -44,7 +45,7 @@ pub fn init() {
             Ok(()) => vprintln!("Created {} ({})", dir.display(), purpose),
             Err(e) => {
                 eprintln!(
-                    "{} Could not create {}: {e}",
+                    "{} could not create {}: {e}",
                     "error:".red().bold(),
                     dir.display()
                 );
@@ -91,7 +92,7 @@ fn configure_vscode_settings(cwd: &Path) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!(
-                    "{} Could not read {}: {e}",
+                    "{} could not read {}: {e}",
                     "error:".red().bold(),
                     settings_path.display()
                 );
@@ -102,7 +103,7 @@ fn configure_vscode_settings(cwd: &Path) {
             Ok(value) => value,
             Err(e) => {
                 println!(
-                    "{} Could not parse {} as JSON ({e}). It may contain comments or \
+                    "{} could not parse {} as JSON ({e}). It may contain comments or \
                      trailing commas; please add the dbt-assist settings manually.",
                     "warning:".yellow().bold(),
                     settings_path.display()
@@ -130,7 +131,7 @@ fn configure_vscode_settings(cwd: &Path) {
     let sub_projects = find_sub_projects(cwd);
     if !sub_projects.is_empty() {
         println!(
-            "{} Found {} nested dbt sub-project(s). Setting these up is not supported yet; \
+            "{} found {} nested dbt sub-project(s). Setting these up is not supported yet; \
              configure them manually in {}:",
             "note:".yellow().bold(),
             sub_projects.len(),
@@ -145,7 +146,7 @@ fn configure_vscode_settings(cwd: &Path) {
         && let Err(e) = fs::create_dir_all(parent)
     {
         eprintln!(
-            "{} Could not create {}: {e}",
+            "{} could not create {}: {e}",
             "error:".red().bold(),
             parent.display()
         );
@@ -156,7 +157,7 @@ fn configure_vscode_settings(cwd: &Path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!(
-                "{} Could not serialize settings: {e}",
+                "{} could not serialize settings: {e}",
                 "error:".red().bold()
             );
             return;
@@ -165,7 +166,7 @@ fn configure_vscode_settings(cwd: &Path) {
     match fs::write(&settings_path, serialized) {
         Ok(()) => vprintln!("Wrote {}", settings_path.display()),
         Err(e) => eprintln!(
-            "{} Could not write {}: {e}",
+            "{} could not write {}: {e}",
             "error:".red().bold(),
             settings_path.display()
         ),
@@ -192,7 +193,7 @@ fn configure_gitignore(cwd: &Path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => {
             eprintln!(
-                "{} Could not read {}: {e}",
+                "{} could not read {}: {e}",
                 "error:".red().bold(),
                 gitignore_path.display()
             );
@@ -229,7 +230,7 @@ fn configure_gitignore(cwd: &Path) {
             gitignore_path.display()
         ),
         Err(e) => eprintln!(
-            "{} Could not write {}: {e}",
+            "{} could not write {}: {e}",
             "error:".red().bold(),
             gitignore_path.display()
         ),

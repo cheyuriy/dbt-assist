@@ -30,7 +30,7 @@ pub fn list(predefined: bool, user: bool, project: bool) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -40,7 +40,7 @@ pub fn list(predefined: bool, user: bool, project: bool) {
     let entries = match list_aliases(&sources, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
+            eprintln!("{} could not list aliases: {e}", "error:".red().bold());
             return;
         }
     };
@@ -91,7 +91,7 @@ pub fn add(
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -110,7 +110,7 @@ pub fn add(
     let entries = match list_aliases(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not inspect existing aliases: {e}", "error:".red().bold());
+            eprintln!("{} could not inspect existing aliases: {e}", "error:".red().bold());
             return;
         }
     };
@@ -160,13 +160,13 @@ pub fn add(
             let (config_root, _) = match config_dir(Some(ConfigScope::Global)) {
                 Ok(resolved) => resolved,
                 Err(e) => {
-                    eprintln!("{} Could not resolve global config directory: {e}", "error:".red().bold());
+                    eprintln!("{} could not resolve global config directory: {e}", "error:".red().bold());
                     return;
                 }
             };
             if !config_root.exists() {
                 eprintln!(
-                    "{} the global config directory does not exist yet. Run {} first.",
+                    "{} the global config directory does not exist yet. run {} first.",
                     "error:".red().bold(),
                     "dbt-assist setup --scope global".bold()
                 );
@@ -175,7 +175,7 @@ pub fn add(
             match user_aliases_dir() {
                 Ok(dir) => dir,
                 Err(e) => {
-                    eprintln!("{} Could not resolve user aliases directory: {e}", "error:".red().bold());
+                    eprintln!("{} could not resolve user aliases directory: {e}", "error:".red().bold());
                     return;
                 }
             }
@@ -191,7 +191,7 @@ pub fn add(
     };
 
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("{} Could not create {}: {e}", "error:".red().bold(), dir.display());
+        eprintln!("{} could not create {}: {e}", "error:".red().bold(), dir.display());
         return;
     }
 
@@ -203,19 +203,19 @@ pub fn add(
     let yaml = match serde_yml::to_string(&alias) {
         Ok(yaml) => yaml,
         Err(e) => {
-            eprintln!("{} Could not serialize alias: {e}", "error:".red().bold());
+            eprintln!("{} could not serialize alias: {e}", "error:".red().bold());
             return;
         }
     };
     let path = dir.join(format!("{name}.yml"));
     if let Err(e) = std::fs::write(&path, yaml) {
-        eprintln!("{} Could not write {}: {e}", "error:".red().bold(), path.display());
+        eprintln!("{} could not write {}: {e}", "error:".red().bold(), path.display());
         return;
     }
     vprintln!("Wrote {}", path.display());
 
     println!(
-        "{} alias {} created in {}.",
+        "{} Alias {} created in {}.",
         "✓".green().bold(),
         name.bold(),
         target.to_string().bold()
@@ -233,7 +233,7 @@ pub fn remove(name: String, source: Option<AliasSource>) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -243,7 +243,7 @@ pub fn remove(name: String, source: Option<AliasSource>) {
     let entries = match list_aliases(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
+            eprintln!("{} could not list aliases: {e}", "error:".red().bold());
             return;
         }
     };
@@ -316,13 +316,13 @@ pub fn remove(name: String, source: Option<AliasSource>) {
         };
         match std::fs::remove_file(path) {
             Ok(()) => println!(
-                "{} alias {} removed from {}.",
+                "{} Alias {} removed from {}.",
                 "✓".green().bold(),
                 name.bold(),
                 target.source.to_string().bold()
             ),
             Err(e) => {
-                eprintln!("{} Could not remove {}: {e}", "error:".red().bold(), path.display())
+                eprintln!("{} could not remove {}: {e}", "error:".red().bold(), path.display())
             }
         }
     }

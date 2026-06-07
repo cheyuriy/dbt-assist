@@ -31,7 +31,7 @@ pub fn list(predefined: bool, user: bool, project: bool) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -41,7 +41,7 @@ pub fn list(predefined: bool, user: bool, project: bool) {
     let entries = match list_templates(&sources, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list templates: {e}", "error:".red().bold());
+            eprintln!("{} could not list templates: {e}", "error:".red().bold());
             return;
         }
     };
@@ -80,7 +80,7 @@ pub fn docs(name: String, source: Option<TemplateSource>) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -90,7 +90,7 @@ pub fn docs(name: String, source: Option<TemplateSource>) {
     let entries = match list_templates(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list templates: {e}", "error:".red().bold());
+            eprintln!("{} could not list templates: {e}", "error:".red().bold());
             return;
         }
     };
@@ -103,7 +103,7 @@ pub fn docs(name: String, source: Option<TemplateSource>) {
     let parsed = match parse_template(&entry.raw) {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("{} Could not parse template {}: {e}", "error:".red().bold(), name.bold());
+            eprintln!("{} could not parse template {}: {e}", "error:".red().bold(), name.bold());
             return;
         }
     };
@@ -144,7 +144,7 @@ pub fn build(args: Vec<String>) {
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -153,8 +153,9 @@ pub fn build(args: Vec<String>) {
 
     if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} `templates build` must be run from a dbt project directory (no {} found here).",
+            "{} {} must be run from a dbt project directory (no {} found here).",
             "error:".red().bold(),
+            "templates build".bold(),
             "dbt_project.yml".bold()
         );
         return;
@@ -163,7 +164,7 @@ pub fn build(args: Vec<String>) {
     let entries = match list_templates(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list templates: {e}", "error:".red().bold());
+            eprintln!("{} could not list templates: {e}", "error:".red().bold());
             return;
         }
     };
@@ -177,7 +178,7 @@ pub fn build(args: Vec<String>) {
         Ok(parsed) => parsed,
         Err(e) => {
             eprintln!(
-                "{} Could not parse template {}: {e}",
+                "{} could not parse template {}: {e}",
                 "error:".red().bold(),
                 parsed_args.name.bold()
             );
@@ -192,7 +193,7 @@ pub fn build(args: Vec<String>) {
         (None, Some(tag)) => match render_str(tag, &parsed_args.vars) {
             Ok(path) => path,
             Err(e) => {
-                eprintln!("{} Could not render output path: {e}", "error:".red().bold());
+                eprintln!("{} could not render output path: {e}", "error:".red().bold());
                 return;
             }
         },
@@ -233,18 +234,18 @@ pub fn build(args: Vec<String>) {
     if let Some(parent) = dest.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        eprintln!("{} Could not create {}: {e}", "error:".red().bold(), parent.display());
+        eprintln!("{} could not create {}: {e}", "error:".red().bold(), parent.display());
         return;
     }
 
     if let Err(e) = std::fs::write(&dest, body) {
-        eprintln!("{} Could not write {}: {e}", "error:".red().bold(), dest.display());
+        eprintln!("{} could not write {}: {e}", "error:".red().bold(), dest.display());
         return;
     }
     vprintln!("Wrote {}", dest.display());
 
     println!(
-        "{} model created at {}.",
+        "{} Model created at {}.",
         "✓".green().bold(),
         rel_path.bold()
     );
@@ -285,7 +286,7 @@ fn resolve_one<'a>(
             .collect::<Vec<_>>()
             .join(", ");
         eprintln!(
-            "{} template {} exists in multiple sources ({}). Pass {} to disambiguate.",
+            "{} template {} exists in multiple sources ({}). pass {} to disambiguate.",
             "error:".red().bold(),
             name.bold(),
             where_str.bold(),
@@ -332,7 +333,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildArgs, Box<dyn std::error::Er
             };
 
             if key.is_empty() {
-                return Err("found a bare `--` with no flag name".into());
+                return Err(format!("found a bare {} with no flag name", "--".bold()).into());
             }
 
             match key.as_str() {
@@ -370,7 +371,11 @@ fn parse_source(value: &str) -> Result<TemplateSource, Box<dyn std::error::Error
         "user" => Ok(TemplateSource::User),
         "project" => Ok(TemplateSource::Project),
         other => Err(format!(
-            "invalid --source {other:?} (expected `predefined`, `user`, or `project`)"
+            "invalid {} {other:?} (expected {}, {}, or {})",
+            "--source".bold(),
+            "predefined".bold(),
+            "user".bold(),
+            "project".bold()
         )
         .into()),
     }

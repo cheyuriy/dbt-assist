@@ -48,8 +48,9 @@ pub fn run(
 
     if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} run inside a dbt project directory (no dbt_project.yml found here)",
-            "error:".red().bold()
+            "{} run inside a dbt project directory (no {} found here).",
+            "error:".red().bold(),
+            "dbt_project.yml".bold()
         );
         return;
     }
@@ -57,7 +58,7 @@ pub fn run(
     let entries = match list_aliases(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} Could not list aliases: {e}", "error:".red().bold());
+            eprintln!("{} could not list aliases: {e}", "error:".red().bold());
             return;
         }
     };
@@ -71,7 +72,7 @@ pub fn run(
         Ok(parsed) => parsed,
         Err(e) => {
             eprintln!(
-                "{} Could not parse alias {}: {e}",
+                "{} could not parse alias {}: {e}",
                 "error:".red().bold(),
                 alias.bold()
             );
@@ -135,7 +136,7 @@ fn resolve_alias<'a>(
             .collect::<Vec<_>>()
             .join(", ");
         eprintln!(
-            "{} alias {} exists in multiple sources ({}). Pass {} to disambiguate.",
+            "{} alias {} exists in multiple sources ({}). pass {} to disambiguate.",
             "error:".red().bold(),
             name.bold(),
             where_str.bold(),
@@ -175,8 +176,9 @@ pub fn manual(
     // project root — even when --project-name overrides the name.
     if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} run inside a dbt project directory (no dbt_project.yml found here)",
-            "error:".red().bold()
+            "{} run inside a dbt project directory (no {} found here).",
+            "error:".red().bold(),
+            "dbt_project.yml".bold()
         );
         return;
     }
@@ -204,7 +206,7 @@ pub fn manual(
     }) {
         Ok(Ok(run_id)) => run_id,
         Ok(Err(e)) => {
-            eprintln!("{} Could not create run: {e}", "error:".red().bold());
+            eprintln!("{} could not create run: {e}", "error:".red().bold());
             return;
         }
         Err(e) => {
@@ -217,10 +219,10 @@ pub fn manual(
     let run_id = run_id.to_string();
 
     if !watch {
-        println!("{}", format!("Run created: {run_id}").green());
+        println!("{} Run created: {}", "✓".green().bold(), run_id.bold());
         println!(
-            "Check status with: {} runs check {run_id}",
-            env!("CARGO_PKG_NAME")
+            "Check status with: {}",
+            format!("{} runs check {run_id}", env!("CARGO_PKG_NAME")).bold()
         );
         return;
     }
@@ -236,7 +238,7 @@ pub fn manual(
         match runs::save_logs(&cwd, &run_id, &final_status) {
             Ok(dir) => Some(dir),
             Err(e) => {
-                eprintln!("{} Could not save logs: {e}", "warning:".yellow().bold());
+                eprintln!("{} could not save logs: {e}", "warning:".yellow().bold());
                 None
             }
         }
@@ -295,8 +297,9 @@ fn check_build_impact(
         Ok(output) => output,
         Err(e) => {
             eprintln!(
-                "{} could not run `dbt ls`: {e} (is dbt installed and on PATH?)",
-                "error:".red().bold()
+                "{} could not run {}: {e} (is dbt installed and on PATH?)",
+                "error:".red().bold(),
+                "dbt ls".bold()
             );
             return confirm("Continue without the build-impact check?", yes);
         }
@@ -307,7 +310,7 @@ fn check_build_impact(
         if !stderr.trim().is_empty() {
             eprint!("{stderr}");
         }
-        eprintln!("{} `dbt ls` failed.", "error:".red().bold());
+        eprintln!("{} {} failed.", "error:".red().bold(), "dbt ls".bold());
         return confirm("Continue without the build-impact check?", yes);
     }
 
@@ -351,14 +354,14 @@ fn check_queue(api: &DbtApi, project: &str, yes: bool) -> bool {
         Ok(Ok(queue)) => queue,
         Ok(Err(e)) => {
             eprintln!(
-                "{} Could not check the runs queue: {e}",
+                "{} could not check the runs queue: {e}",
                 "warning:".yellow().bold()
             );
             return confirm("Continue anyway?", yes);
         }
         Err(e) => {
             eprintln!(
-                "{} Could not check the runs queue: {e}",
+                "{} could not check the runs queue: {e}",
                 "warning:".yellow().bold()
             );
             return confirm("Continue anyway?", yes);

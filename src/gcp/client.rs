@@ -24,7 +24,7 @@ pub async fn get_client(
             .deref()
             .to_string()
     } else {
-        return Err("Project ID not found in configuration or service account credentials".into());
+        return Err("project ID not found in configuration or service account credentials".into());
     };
 
     let gcs_client = Client::new(client_config);
@@ -49,17 +49,17 @@ pub fn resolve_service_account_path(
         if res.exists() {
             Ok(res)
         } else {
-            Err("Service account file not found".into())
+            Err("service account file not found".into())
         }
     } else if let Ok(env_path) = env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         let res = crate::utils::expand_tilde(&env_path);
         if res.exists() {
             Ok(res)
         } else {
-            Err("Service account file not found".into())
+            Err("service account file not found".into())
         }
     } else {
-        Err("Service account file not found".into())
+        Err("service account file not found".into())
     }
 }
 
@@ -72,7 +72,7 @@ pub async fn load_service_account(
     .await
     {
         Ok(cred) => cred,
-        Err(_) => return Err("Service account file not found".into()),
+        Err(_) => return Err("service account file not found".into()),
     };
     let config = ClientConfig::default()
         .with_credentials(credentials_file)

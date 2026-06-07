@@ -14,7 +14,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve config directory: {e}",
+                "{} could not resolve config directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -36,7 +36,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve {target_scope} config directory: {e}",
+                "{} could not resolve {target_scope} config directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -49,9 +49,10 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         vprintln!("Test-only mode: validating existing config without modifying it");
         if !target_exists {
             eprintln!(
-                "{} No config at {}. Run `dbt-assist setup` first.",
+                "{} no config at {}. run {} first.",
                 "error:".red().bold(),
-                target_yaml.display().to_string().cyan()
+                target_yaml.display().to_string().cyan(),
+                "dbt-assist setup".bold()
             );
             return;
         }
@@ -62,7 +63,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
         );
         match load_config(Some(target_scope)) {
             Ok((config, _)) => test_config(&config),
-            Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
+            Err(e) => eprintln!("{} could not load config: {e}", "error:".red().bold()),
         }
         return;
     }
@@ -84,7 +85,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
             println!("{}", "Keeping existing config.".dimmed());
             match load_config(Some(target_scope)) {
                 Ok((config, _)) => test_config(&config),
-                Err(e) => eprintln!("{} Could not load config: {e}", "error:".red().bold()),
+                Err(e) => eprintln!("{} could not load config: {e}", "error:".red().bold()),
             }
             return;
         }
@@ -106,7 +107,7 @@ pub fn setup(test_only: bool, scope: Option<ConfigScope>) {
     let saved_scope = match save_config(&config, Some(target_scope)) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{} Could not save config: {e}", "error:".red().bold());
+            eprintln!("{} could not save config: {e}", "error:".red().bold());
             return;
         }
     };
@@ -433,7 +434,7 @@ async fn check_dbt_connection(config: &AppConfig, sa_ok: bool) {
     if needs_sa && !sa_ok {
         println!(
             "{}\n    {}",
-            "skipped".yellow(),
+            "skipped".yellow().bold(),
             "service account check failed".dimmed()
         );
         return;
@@ -512,10 +513,10 @@ fn check_local_access(config: &AppConfig) {
 fn verify_local_dir(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let dir = crate::utils::expand_tilde(path);
     if !dir.exists() {
-        return Err(format!("Directory not found: {path}").into());
+        return Err(format!("directory not found: {path}").into());
     }
     if !dir.is_dir() {
-        return Err(format!("Not a directory: {path}").into());
+        return Err(format!("not a directory: {path}").into());
     }
     std::fs::read_dir(&dir)?; // surfaces permission errors as the `?` error
     Ok(())

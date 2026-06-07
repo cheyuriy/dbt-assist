@@ -19,14 +19,21 @@ fn resolve_project_name(
         return Ok(name);
     }
     if !crate::utils::is_dbt_project(cwd) {
-        return Err(
-            "run inside a dbt project directory (no dbt_project.yml found here) or pass \
-             --project-name"
-                .into(),
-        );
+        return Err(format!(
+            "run inside a dbt project directory (no {} found here) or pass {}",
+            "dbt_project.yml".bold(),
+            "--project-name".bold()
+        )
+        .into());
     }
-    crate::utils::read_project_name(cwd)
-        .ok_or_else(|| "could not read `name:` from dbt_project.yml; pass --project-name".into())
+    crate::utils::read_project_name(cwd).ok_or_else(|| {
+        format!(
+            "could not read `name:` from {}; pass {}",
+            "dbt_project.yml".bold(),
+            "--project-name".bold()
+        )
+        .into()
+    })
 }
 
 /// Shared setup for the runs subcommands: resolve cwd + project name, load the
@@ -77,7 +84,7 @@ pub fn queue(scope: Option<ConfigScope>, project_name: Option<String>) {
     let queue = match result {
         Ok(queue) => queue,
         Err(e) => {
-            eprintln!("{} Could not fetch runs: {e}", "error:".red().bold());
+            eprintln!("{} could not fetch runs: {e}", "error:".red().bold());
             return;
         }
     };
@@ -130,8 +137,8 @@ pub fn cancel(scope: Option<ConfigScope>, project_name: Option<String>, run_id: 
     };
 
     match result {
-        Ok(()) => println!("{}", format!("Run {run_id} cancelled.").green()),
-        Err(e) => eprintln!("{} Could not cancel run: {e}", "error:".red().bold()),
+        Ok(()) => println!("{} Run {} cancelled.", "✓".green().bold(), run_id.bold()),
+        Err(e) => eprintln!("{} could not cancel run: {e}", "error:".red().bold()),
     }
 }
 
@@ -279,9 +286,11 @@ pub fn check(
 
     if save_files && !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} --save-files writes to .logs/, so run inside a dbt project directory \
-             (no dbt_project.yml found here)",
-            "error:".red().bold()
+            "{} {} writes to {}, so run inside a dbt project directory (no {} found here).",
+            "error:".red().bold(),
+            "--save-files".bold(),
+            ".logs/".bold(),
+            "dbt_project.yml".bold()
         );
         return;
     }
@@ -298,7 +307,7 @@ pub fn check(
         match save_logs(&cwd, &run_id, &status) {
             Ok(dir) => Some(dir),
             Err(e) => {
-                eprintln!("{} Could not save logs: {e}", "warning:".yellow().bold());
+                eprintln!("{} could not save logs: {e}", "warning:".yellow().bold());
                 None
             }
         }

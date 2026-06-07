@@ -92,7 +92,7 @@ fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     {
         Ok(proj_dirs.config_dir().to_path_buf())
     } else {
-        Err("Could not determine default config directory".into())
+        Err("could not determine default config directory".into())
     }
 }
 
@@ -119,7 +119,7 @@ pub fn config_dir(
                     return Ok((dir, ConfigScope::Global));
                 }
                 return Err(
-                    "Config directory specified in environment variable does not exist".into(),
+                    "config directory specified in environment variable does not exist".into(),
                 );
             }
             if let Some(dir) = project_config_dir() {
@@ -136,7 +136,7 @@ pub fn load_config(
     let (dir, resolved) = config_dir(scope)?;
     let path = dir.join("config.yaml");
     if !path.is_file() {
-        return Err(format!("Config file not found at {}", path.display()).into());
+        return Err(format!("config file not found at {}", path.display()).into());
     }
     let pkg_name = env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase();
 

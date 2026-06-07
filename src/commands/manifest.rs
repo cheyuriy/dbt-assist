@@ -21,7 +21,7 @@ pub fn manifest(
         Ok(dir) => dir,
         Err(e) => {
             eprintln!(
-                "{} Could not resolve current directory: {e}",
+                "{} could not resolve current directory: {e}",
                 "error:".red().bold()
             );
             return;
@@ -30,8 +30,9 @@ pub fn manifest(
 
     if !crate::utils::is_dbt_project(&cwd) {
         eprintln!(
-            "{} `manifest` must be run from a dbt project directory (no {} found here).",
+            "{} {} must be run from a dbt project directory (no {} found here).",
             "error:".red().bold(),
+            "manifest".bold(),
             "dbt_project.yml".bold()
         );
         return;
@@ -40,7 +41,7 @@ pub fn manifest(
     let (config, resolved) = match load_config(scope) {
         Ok(loaded) => loaded,
         Err(e) => {
-            eprintln!("{} Could not load config: {e}", "error:".red().bold());
+            eprintln!("{} could not load config: {e}", "error:".red().bold());
             return;
         }
     };
@@ -50,7 +51,7 @@ pub fn manifest(
     let dest_dir = cwd.join(manifest_dir.as_deref().unwrap_or(".manifest"));
     if let Err(e) = fs::create_dir_all(&dest_dir) {
         eprintln!(
-            "{} Could not create {}: {e}",
+            "{} could not create {}: {e}",
             "error:".red().bold(),
             dest_dir.display()
         );
@@ -100,7 +101,7 @@ pub fn manifest(
 fn copy_local(path: &str, dest: &Path) -> Result<Option<SystemTime>, Box<dyn std::error::Error>> {
     let src = crate::utils::expand_tilde(path).join("manifest.json");
     if !src.is_file() {
-        return Err(format!("Manifest not found at {}", src.display()).into());
+        return Err(format!("manifest not found at {}", src.display()).into());
     }
     let modified = fs::metadata(&src)?.modified().ok();
     fs::copy(&src, dest)?;
@@ -135,8 +136,12 @@ fn resolve_project_name(
         return Ok(name.to_string());
     }
     crate::utils::read_project_name(cwd).ok_or_else(|| {
-        "Could not determine project name; pass --project-name or set `name` in dbt_project.yml"
-            .into()
+        format!(
+            "could not determine project name; pass {} or set `name` in {}",
+            "--project-name".bold(),
+            "dbt_project.yml".bold()
+        )
+        .into()
     })
 }
 
@@ -167,7 +172,7 @@ fn report_age(modified: Option<SystemTime>) {
     println!("Manifest is {hours} hour(s) old.");
     if hours >= 24 {
         println!(
-            "{} The manifest is over 24 hours old and may be out of date.",
+            "{} the manifest is over 24 hours old and may be out of date.",
             "warning:".yellow().bold()
         );
     }
