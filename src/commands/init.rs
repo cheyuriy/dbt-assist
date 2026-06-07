@@ -201,8 +201,7 @@ fn configure_gitignore(cwd: &Path) {
         }
     };
 
-    let already: std::collections::HashSet<&str> =
-        existing.lines().map(|l| l.trim()).collect();
+    let already: std::collections::HashSet<&str> = existing.lines().map(|l| l.trim()).collect();
     let missing: Vec<&str> = GITIGNORE_ENTRIES
         .iter()
         .copied()
@@ -210,7 +209,10 @@ fn configure_gitignore(cwd: &Path) {
         .collect();
 
     if missing.is_empty() {
-        vprintln!("All folders already present in {}", gitignore_path.display());
+        vprintln!(
+            "All folders already present in {}",
+            gitignore_path.display()
+        );
         return;
     }
 
@@ -367,7 +369,10 @@ mod tests {
         configure_gitignore(tmp.path());
         let contents = fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
         for entry in GITIGNORE_ENTRIES {
-            assert!(contents.lines().any(|l| l.trim() == entry), "missing {entry}");
+            assert!(
+                contents.lines().any(|l| l.trim() == entry),
+                "missing {entry}"
+            );
         }
     }
 
@@ -383,10 +388,16 @@ mod tests {
         // Unrelated entry preserved.
         assert!(contents.lines().any(|l| l.trim() == "target/"));
         // `.manifest` not duplicated.
-        assert_eq!(contents.lines().filter(|l| l.trim() == ".manifest").count(), 1);
+        assert_eq!(
+            contents.lines().filter(|l| l.trim() == ".manifest").count(),
+            1
+        );
         // The other three were appended.
         for entry in [".aliases", ".templates", ".vscode"] {
-            assert!(contents.lines().any(|l| l.trim() == entry), "missing {entry}");
+            assert!(
+                contents.lines().any(|l| l.trim() == entry),
+                "missing {entry}"
+            );
         }
     }
 }

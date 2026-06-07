@@ -110,7 +110,10 @@ pub fn add(
     let entries = match list_aliases(&ALL_SOURCES, &cwd) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("{} could not inspect existing aliases: {e}", "error:".red().bold());
+            eprintln!(
+                "{} could not inspect existing aliases: {e}",
+                "error:".red().bold()
+            );
             return;
         }
     };
@@ -160,7 +163,10 @@ pub fn add(
             let (config_root, _) = match config_dir(Some(ConfigScope::Global)) {
                 Ok(resolved) => resolved,
                 Err(e) => {
-                    eprintln!("{} could not resolve global config directory: {e}", "error:".red().bold());
+                    eprintln!(
+                        "{} could not resolve global config directory: {e}",
+                        "error:".red().bold()
+                    );
                     return;
                 }
             };
@@ -175,7 +181,10 @@ pub fn add(
             match user_aliases_dir() {
                 Ok(dir) => dir,
                 Err(e) => {
-                    eprintln!("{} could not resolve user aliases directory: {e}", "error:".red().bold());
+                    eprintln!(
+                        "{} could not resolve user aliases directory: {e}",
+                        "error:".red().bold()
+                    );
                     return;
                 }
             }
@@ -191,7 +200,11 @@ pub fn add(
     };
 
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("{} could not create {}: {e}", "error:".red().bold(), dir.display());
+        eprintln!(
+            "{} could not create {}: {e}",
+            "error:".red().bold(),
+            dir.display()
+        );
         return;
     }
 
@@ -209,7 +222,11 @@ pub fn add(
     };
     let path = dir.join(format!("{name}.yml"));
     if let Err(e) = std::fs::write(&path, yaml) {
-        eprintln!("{} could not write {}: {e}", "error:".red().bold(), path.display());
+        eprintln!(
+            "{} could not write {}: {e}",
+            "error:".red().bold(),
+            path.display()
+        );
         return;
     }
     vprintln!("Wrote {}", path.display());
@@ -250,7 +267,11 @@ pub fn remove(name: String, source: Option<AliasSource>) {
     let matches = find_by_name(&entries, &name);
 
     if matches.is_empty() {
-        eprintln!("{} no alias named {} found.", "error:".red().bold(), name.bold());
+        eprintln!(
+            "{} no alias named {} found.",
+            "error:".red().bold(),
+            name.bold()
+        );
         return;
     }
 
@@ -258,7 +279,11 @@ pub fn remove(name: String, source: Option<AliasSource>) {
     // bundled and immutable), narrowed to `--source` when given.
     let targets: Vec<&_> = match source {
         Some(src) => {
-            let found: Vec<&_> = matches.iter().filter(|e| e.source == src).copied().collect();
+            let found: Vec<&_> = matches
+                .iter()
+                .filter(|e| e.source == src)
+                .copied()
+                .collect();
             if found.is_empty() {
                 eprintln!(
                     "{} no alias named {} found in {}.",
@@ -311,7 +336,11 @@ pub fn remove(name: String, source: Option<AliasSource>) {
 
     for target in &targets {
         let Some(path) = &target.path else {
-            eprintln!("{} alias {} has no on-disk path.", "error:".red().bold(), name.bold());
+            eprintln!(
+                "{} alias {} has no on-disk path.",
+                "error:".red().bold(),
+                name.bold()
+            );
             continue;
         };
         match std::fs::remove_file(path) {
@@ -322,7 +351,11 @@ pub fn remove(name: String, source: Option<AliasSource>) {
                 target.source.to_string().bold()
             ),
             Err(e) => {
-                eprintln!("{} could not remove {}: {e}", "error:".red().bold(), path.display())
+                eprintln!(
+                    "{} could not remove {}: {e}",
+                    "error:".red().bold(),
+                    path.display()
+                )
             }
         }
     }

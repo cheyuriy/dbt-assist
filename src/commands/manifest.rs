@@ -120,8 +120,9 @@ fn download_gcs(
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let (bytes, updated) =
-        rt.block_on(crate::gcp::client::download_manifest(config, bucket, object))?;
+    let (bytes, updated) = rt.block_on(crate::gcp::client::download_manifest(
+        config, bucket, object,
+    ))?;
     fs::write(dest, bytes)?;
     Ok(updated)
 }
@@ -197,10 +198,7 @@ mod tests {
     fn resolve_project_name_falls_back_to_yaml() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("dbt_project.yml"), "name: from_yaml\n").unwrap();
-        assert_eq!(
-            resolve_project_name(None, tmp.path()).unwrap(),
-            "from_yaml"
-        );
+        assert_eq!(resolve_project_name(None, tmp.path()).unwrap(), "from_yaml");
     }
 
     #[test]

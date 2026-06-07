@@ -105,7 +105,12 @@ mod tests {
             Some((u, p)) => (Some(u.to_string()), Some(p.to_string())),
             None => (None, None),
         };
-        NormalProxyClient::new(reqwest::Client::new(), server.base_url(), username, password)
+        NormalProxyClient::new(
+            reqwest::Client::new(),
+            server.base_url(),
+            username,
+            password,
+        )
     }
 
     /// True when the request carries no `Authorization` header (case-insensitive).
@@ -183,12 +188,19 @@ mod tests {
                         "full_refresh": true,
                         "turbo": false,
                     }));
-                then.status(201).json_body(serde_json::json!({"run_id": 1234}));
+                then.status(201)
+                    .json_body(serde_json::json!({"run_id": 1234}));
             })
             .await;
 
         let result = client(&server, Some(("user", "pass")))
-            .create_run("analytics", "tag:nightly", Some("model_x"), Some(true), false)
+            .create_run(
+                "analytics",
+                "tag:nightly",
+                Some("model_x"),
+                Some(true),
+                false,
+            )
             .await;
 
         assert_eq!(result.expect("create run"), 1234);
@@ -200,12 +212,14 @@ mod tests {
         let server = MockServer::start_async().await;
         let mock = server
             .mock_async(|when, then| {
-                when.method(POST).path("/runs/manual").json_body(serde_json::json!({
-                    "select": "*",
-                    "project_name": "analytics",
-                    "full_refresh": null,
-                    "turbo": true,
-                }));
+                when.method(POST)
+                    .path("/runs/manual")
+                    .json_body(serde_json::json!({
+                        "select": "*",
+                        "project_name": "analytics",
+                        "full_refresh": null,
+                        "turbo": true,
+                    }));
                 then.status(201).json_body(serde_json::json!({"run_id": 7}));
             })
             .await;
@@ -224,7 +238,8 @@ mod tests {
         server
             .mock_async(|when, then| {
                 when.method(POST).path("/runs/manual");
-                then.status(500).json_body(serde_json::json!({"message": "boom"}));
+                then.status(500)
+                    .json_body(serde_json::json!({"message": "boom"}));
             })
             .await;
 
@@ -326,7 +341,8 @@ mod tests {
         server
             .mock_async(|when, then| {
                 when.method(DELETE).path("/runs/9");
-                then.status(404).json_body(serde_json::json!({"message": "not found"}));
+                then.status(404)
+                    .json_body(serde_json::json!({"message": "not found"}));
             })
             .await;
 

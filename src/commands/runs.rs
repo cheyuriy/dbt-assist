@@ -172,7 +172,10 @@ fn presence_icon(present: bool) -> &'static str {
 }
 
 /// Join one glyph per step, space-separated, via `pick`.
-fn step_icons(status: &RunStatus, pick: impl Fn(&crate::models::runs::RunStep) -> &'static str) -> String {
+fn step_icons(
+    status: &RunStatus,
+    pick: impl Fn(&crate::models::runs::RunStep) -> &'static str,
+) -> String {
     status
         .run_steps
         .iter()
@@ -218,7 +221,13 @@ pub(crate) fn build_status_table(status: &RunStatus, logs_dir: Option<&Path>) ->
 /// whitespace) with underscores.
 fn sanitize_for_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c == '/' || c == '\\' || c.is_whitespace() { '_' } else { c })
+        .map(|c| {
+            if c == '/' || c == '\\' || c.is_whitespace() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect()
 }
 

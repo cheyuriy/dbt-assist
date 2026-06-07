@@ -75,7 +75,10 @@ fn read_predefined() -> Vec<AliasEntry> {
     let mut entries = Vec::new();
     for file in PREDEFINED.files() {
         let path = file.path();
-        let is_yaml = path.extension().and_then(|e| e.to_str()).is_some_and(is_yaml_ext);
+        let is_yaml = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_yaml_ext);
         if !is_yaml {
             continue;
         }
@@ -108,7 +111,10 @@ pub fn read_aliases_from_dir(dir: &Path, source: AliasSource) -> Vec<AliasEntry>
         if !path.is_file() {
             continue;
         }
-        let is_yaml = path.extension().and_then(|e| e.to_str()).is_some_and(is_yaml_ext);
+        let is_yaml = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_yaml_ext);
         if !is_yaml {
             continue;
         }
@@ -151,8 +157,11 @@ pub fn list_aliases(
 }
 
 /// All sources, in precedence order.
-pub const ALL_SOURCES: [AliasSource; 3] =
-    [AliasSource::Predefined, AliasSource::User, AliasSource::Project];
+pub const ALL_SOURCES: [AliasSource; 3] = [
+    AliasSource::Predefined,
+    AliasSource::User,
+    AliasSource::Project,
+];
 
 /// Case-insensitive lookup of every entry matching `name`.
 pub fn find_by_name<'a>(entries: &'a [AliasEntry], name: &str) -> Vec<&'a AliasEntry> {

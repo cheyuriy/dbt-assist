@@ -55,8 +55,11 @@ pub struct ParsedTemplate {
 }
 
 /// All sources, in precedence order.
-pub const ALL_SOURCES: [TemplateSource; 3] =
-    [TemplateSource::Predefined, TemplateSource::User, TemplateSource::Project];
+pub const ALL_SOURCES: [TemplateSource; 3] = [
+    TemplateSource::Predefined,
+    TemplateSource::User,
+    TemplateSource::Project,
+];
 
 /// True if `ext` (lowercased) is a Jinja extension we recognize.
 fn is_jinja_ext(ext: &str) -> bool {
@@ -79,7 +82,10 @@ fn read_predefined() -> Vec<TemplateEntry> {
     let mut entries = Vec::new();
     for file in PREDEFINED.files() {
         let path = file.path();
-        let is_jinja = path.extension().and_then(|e| e.to_str()).is_some_and(is_jinja_ext);
+        let is_jinja = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_jinja_ext);
         if !is_jinja {
             continue;
         }
@@ -112,7 +118,10 @@ pub fn read_templates_from_dir(dir: &Path, source: TemplateSource) -> Vec<Templa
         if !path.is_file() {
             continue;
         }
-        let is_jinja = path.extension().and_then(|e| e.to_str()).is_some_and(is_jinja_ext);
+        let is_jinja = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(is_jinja_ext);
         if !is_jinja {
             continue;
         }
@@ -180,9 +189,8 @@ pub fn validate_template_name(name: &str) -> Result<(), Box<dyn std::error::Erro
 static OUTPUT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?m)\{%-?\s*output\s+(?:'([^']*)'|"([^"]*)")\s*-?%\}"#).unwrap()
 });
-static DOCS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)\{%-?\s*docs\s*-?%\}(.*?)\{%-?\s*enddocs\s*-?%\}").unwrap()
-});
+static DOCS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\{%-?\s*docs\s*-?%\}(.*?)\{%-?\s*enddocs\s*-?%\}").unwrap());
 static DOCS_OPEN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{%-?\s*docs\s*-?%\}").unwrap());
 
@@ -306,13 +314,16 @@ mod tests {
     fn parse_output_keeps_interpolation_raw() {
         let parsed =
             parse_template("{% output 'models/{{dataset}}/{{table}}.sql' %}\nbody").unwrap();
-        assert_eq!(parsed.output.as_deref(), Some("models/{{dataset}}/{{table}}.sql"));
+        assert_eq!(
+            parsed.output.as_deref(),
+            Some("models/{{dataset}}/{{table}}.sql")
+        );
     }
 
     #[test]
     fn parse_accepts_trim_markers() {
-        let parsed = parse_template("{%- output 'x.sql' -%}\n{%- docs -%}d{%- enddocs -%}\nbody")
-            .unwrap();
+        let parsed =
+            parse_template("{%- output 'x.sql' -%}\n{%- docs -%}d{%- enddocs -%}\nbody").unwrap();
         assert_eq!(parsed.output.as_deref(), Some("x.sql"));
         assert_eq!(parsed.docs.as_deref(), Some("d"));
     }

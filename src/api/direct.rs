@@ -447,7 +447,9 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path("/v2/accounts/42/jobs/100/")
-                    .body_contains("dbt build --select tag:nightly --exclude model_x --full-refresh")
+                    .body_contains(
+                        "dbt build --select tag:nightly --exclude model_x --full-refresh",
+                    )
                     .body_contains("\"target_name\":\"prod\"")
                     .body_contains("\"threads\":1");
                 then.status(200).json_body(json!({"data": {"id": 100}}));
@@ -464,7 +466,13 @@ mod tests {
             .await;
 
         let run_id = client(&server, "t")
-            .create_run("my-project", "tag:nightly", Some("model_x"), Some(true), false)
+            .create_run(
+                "my-project",
+                "tag:nightly",
+                Some("model_x"),
+                Some(true),
+                false,
+            )
             .await
             .expect("create run");
 

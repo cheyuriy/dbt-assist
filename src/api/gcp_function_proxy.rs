@@ -67,7 +67,13 @@ impl DbtApiClient for GcpFunctionProxyClient {
         &self,
         project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
-        proxy::get_runs_queue(&self.http, &self.endpoint_url, self.auth().await?, project_name).await
+        proxy::get_runs_queue(
+            &self.http,
+            &self.endpoint_url,
+            self.auth().await?,
+            project_name,
+        )
+        .await
     }
 
     async fn create_run(

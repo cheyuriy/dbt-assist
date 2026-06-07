@@ -103,16 +103,16 @@ pub fn docs(name: String, source: Option<TemplateSource>) {
     let parsed = match parse_template(&entry.raw) {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("{} could not parse template {}: {e}", "error:".red().bold(), name.bold());
+            eprintln!(
+                "{} could not parse template {}: {e}",
+                "error:".red().bold(),
+                name.bold()
+            );
             return;
         }
     };
 
-    println!(
-        "{} ({})",
-        name.bold(),
-        entry.source.to_string().dimmed()
-    );
+    println!("{} ({})", name.bold(), entry.source.to_string().dimmed());
     println!();
     match &parsed.docs {
         Some(docs) => println!("{docs}"),
@@ -193,7 +193,10 @@ pub fn build(args: Vec<String>) {
         (None, Some(tag)) => match render_str(tag, &parsed_args.vars) {
             Ok(path) => path,
             Err(e) => {
-                eprintln!("{} could not render output path: {e}", "error:".red().bold());
+                eprintln!(
+                    "{} could not render output path: {e}",
+                    "error:".red().bold()
+                );
                 return;
             }
         },
@@ -234,12 +237,20 @@ pub fn build(args: Vec<String>) {
     if let Some(parent) = dest.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        eprintln!("{} could not create {}: {e}", "error:".red().bold(), parent.display());
+        eprintln!(
+            "{} could not create {}: {e}",
+            "error:".red().bold(),
+            parent.display()
+        );
         return;
     }
 
     if let Err(e) = std::fs::write(&dest, body) {
-        eprintln!("{} could not write {}: {e}", "error:".red().bold(), dest.display());
+        eprintln!(
+            "{} could not write {}: {e}",
+            "error:".red().bold(),
+            dest.display()
+        );
         return;
     }
     vprintln!("Wrote {}", dest.display());
@@ -260,7 +271,11 @@ fn resolve_one<'a>(
 ) -> Result<&'a TemplateEntry, ()> {
     let matches = find_by_name(entries, name);
     if matches.is_empty() {
-        eprintln!("{} no template named {} found.", "error:".red().bold(), name.bold());
+        eprintln!(
+            "{} no template named {} found.",
+            "error:".red().bold(),
+            name.bold()
+        );
         return Err(());
     }
 
@@ -405,7 +420,15 @@ mod tests {
 
     #[test]
     fn parse_build_args_extracts_reserved_flags() {
-        let args = svec(&["proxy", "--source", "user", "--output", "models/x.sql", "--d", "1"]);
+        let args = svec(&[
+            "proxy",
+            "--source",
+            "user",
+            "--output",
+            "models/x.sql",
+            "--d",
+            "1",
+        ]);
         let parsed = parse_build_args(&args).unwrap();
         assert_eq!(parsed.source, Some(TemplateSource::User));
         assert_eq!(parsed.output.as_deref(), Some("models/x.sql"));
@@ -424,7 +447,10 @@ mod tests {
     fn parse_build_args_bare_flag_is_true() {
         let args = svec(&["proxy", "--full-refresh"]);
         let parsed = parse_build_args(&args).unwrap();
-        assert_eq!(parsed.vars.get("full-refresh").map(String::as_str), Some("true"));
+        assert_eq!(
+            parsed.vars.get("full-refresh").map(String::as_str),
+            Some("true")
+        );
     }
 
     #[test]
