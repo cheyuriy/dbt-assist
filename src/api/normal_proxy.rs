@@ -1,5 +1,6 @@
 use super::client::{DbtApiClient, check_ping_ok};
 use super::proxy::{self, ProxyAuth};
+use crate::errors::NormalProxyError;
 
 /// Plain proxy connection: requests go to the user's proxy `url`. When both a
 /// `username` and `password` are set they are sent as HTTP `Basic` auth;
@@ -44,13 +45,17 @@ impl DbtApiClient for NormalProxyClient {
         let url = format!("{}/ping", self.url.trim_end_matches('/'));
         let resp = self.auth().apply(self.http.get(url)).send().await?;
         check_ping_ok(resp)
+            .map_err(|status| NormalProxyError::BadStatus(format!("ping failed with status {status}")))?;
+        Ok(())
     }
 
     async fn get_runs_queue(
         &self,
         project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
-        proxy::get_runs_queue(&self.http, &self.url, self.auth(), project_name).await
+        Ok(proxy::get_runs_queue(&self.http, &self.url, self.auth(), project_name)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 
     async fn create_run(
@@ -61,7 +66,7 @@ impl DbtApiClient for NormalProxyClient {
         full_refresh: Option<bool>,
         turbo: bool,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        proxy::create_run(
+        Ok(proxy::create_run(
             &self.http,
             &self.url,
             self.auth(),
@@ -72,6 +77,7 @@ impl DbtApiClient for NormalProxyClient {
             turbo,
         )
         .await
+        .map_err(NormalProxyError::from)?)
     }
 
     async fn check_run_status(
@@ -79,7 +85,9 @@ impl DbtApiClient for NormalProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
-        proxy::check_run_status(&self.http, &self.url, self.auth(), run_id).await
+        Ok(proxy::check_run_status(&self.http, &self.url, self.auth(), run_id)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 
     async fn cancel_run(
@@ -87,7 +95,9 @@ impl DbtApiClient for NormalProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        proxy::cancel_run(&self.http, &self.url, self.auth(), run_id).await
+        Ok(proxy::cancel_run(&self.http, &self.url, self.auth(), run_id)
+            .await
+            .map_err(NormalProxyError::from)?)
     }
 }
 

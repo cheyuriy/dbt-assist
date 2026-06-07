@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 
+use crate::errors::{EnvironmentError, ValidationError};
 use crate::models::config::{ConfigScope, config_dir};
 
 /// Predefined aliases bundled into the binary at compile time from the
@@ -60,7 +61,7 @@ fn is_yaml_ext(ext: &str) -> bool {
 }
 
 /// User aliases directory: `<global config dir>/aliases`.
-pub fn user_aliases_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn user_aliases_dir() -> Result<PathBuf, EnvironmentError> {
     let (dir, _) = config_dir(Some(ConfigScope::Global))?;
     Ok(dir.join("aliases"))
 }
@@ -140,7 +141,7 @@ pub fn read_aliases_from_dir(dir: &Path, source: AliasSource) -> Vec<AliasEntry>
 pub fn list_aliases(
     sources: &[AliasSource],
     cwd: &Path,
-) -> Result<Vec<AliasEntry>, Box<dyn std::error::Error>> {
+) -> Result<Vec<AliasEntry>, EnvironmentError> {
     let mut entries = Vec::new();
     if sources.contains(&AliasSource::Predefined) {
         entries.extend(read_predefined());
@@ -173,12 +174,12 @@ pub fn find_by_name<'a>(entries: &'a [AliasEntry], name: &str) -> Vec<&'a AliasE
 
 /// Validate that `name` is usable as a single alias filename: non-empty and
 /// free of path separators or extension dots.
-pub fn validate_alias_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn validate_alias_name(name: &str) -> Result<(), ValidationError> {
     if name.trim().is_empty() {
-        return Err("alias name must not be empty".into());
+        return Err(ValidationError::EmptyName { kind: "alias" });
     }
     if name.contains('/') || name.contains('\\') || name.contains('.') {
-        return Err("alias name must not contain '/', '\\', or '.'".into());
+        return Err(ValidationError::IllegalChars { kind: "alias" });
     }
     Ok(())
 }

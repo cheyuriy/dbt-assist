@@ -1,6 +1,7 @@
 mod api;
 mod cli;
 mod commands;
+mod errors;
 mod gcp;
 mod models;
 mod utils;

@@ -325,7 +325,7 @@ struct BuildArgs {
 /// the template name; reserved flags `--source`/`--output` are extracted; every
 /// other `--key value` / `--key=value` becomes a template variable. A bare flag
 /// (no following value) is treated as `"true"`.
-fn parse_build_args(args: &[String]) -> Result<BuildArgs, Box<dyn std::error::Error>> {
+fn parse_build_args(args: &[String]) -> Result<BuildArgs, crate::errors::ValidationError> {
     let mut name: Option<String> = None;
     let mut source: Option<TemplateSource> = None;
     let mut output: Option<String> = None;
@@ -348,7 +348,10 @@ fn parse_build_args(args: &[String]) -> Result<BuildArgs, Box<dyn std::error::Er
             };
 
             if key.is_empty() {
-                return Err(format!("found a bare {} with no flag name", "--".bold()).into());
+                return Err(crate::errors::ValidationError::BuildArgs(format!(
+                    "found a bare {} with no flag name",
+                    "--".bold()
+                )));
             }
 
             match key.as_str() {
@@ -365,12 +368,16 @@ fn parse_build_args(args: &[String]) -> Result<BuildArgs, Box<dyn std::error::Er
         } else if name.is_none() {
             name = Some(token.clone());
         } else {
-            return Err(format!("unexpected argument {token:?}").into());
+            return Err(crate::errors::ValidationError::BuildArgs(format!(
+                "unexpected argument {token:?}"
+            )));
         }
         i += 1;
     }
 
-    let name = name.ok_or("a template name is required")?;
+    let name = name.ok_or_else(|| {
+        crate::errors::ValidationError::BuildArgs("a template name is required".to_string())
+    })?;
     Ok(BuildArgs {
         name,
         source,
@@ -380,19 +387,18 @@ fn parse_build_args(args: &[String]) -> Result<BuildArgs, Box<dyn std::error::Er
 }
 
 /// Parse a `--source` value into a `TemplateSource`.
-fn parse_source(value: &str) -> Result<TemplateSource, Box<dyn std::error::Error>> {
+fn parse_source(value: &str) -> Result<TemplateSource, crate::errors::ValidationError> {
     match value.to_ascii_lowercase().as_str() {
         "predefined" => Ok(TemplateSource::Predefined),
         "user" => Ok(TemplateSource::User),
         "project" => Ok(TemplateSource::Project),
-        other => Err(format!(
+        other => Err(crate::errors::ValidationError::BuildArgs(format!(
             "invalid {} {other:?} (expected {}, {}, or {})",
             "--source".bold(),
             "predefined".bold(),
             "user".bold(),
             "project".bold()
-        )
-        .into()),
+        ))),
     }
 }
 

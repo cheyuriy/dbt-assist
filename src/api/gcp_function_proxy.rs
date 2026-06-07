@@ -3,6 +3,7 @@ use google_cloud_storage::client::google_cloud_auth::idtoken::IdTokenSourceConfi
 
 use super::client::{DbtApiClient, check_ping_ok};
 use super::proxy::{self, ProxyAuth};
+use crate::errors::GcpFunctionProxyError;
 
 /// GCP Cloud Function proxy connection. Endpoints/request shape match
 /// [`super::normal_proxy::NormalProxyClient`]; the difference is authorization.
@@ -33,7 +34,7 @@ impl GcpFunctionProxyClient {
 
     /// Mints a GCP ID token for the Cloud Function (the function's
     /// `endpoint_url` is the audience), using the configured service account.
-    async fn id_token(&self) -> Result<String, Box<dyn std::error::Error>> {
+    async fn id_token(&self) -> Result<String, GcpFunctionProxyError> {
         let path =
             crate::gcp::client::resolve_service_account_path(self.service_account_path.as_deref())?;
         let credentials =
@@ -47,7 +48,7 @@ impl GcpFunctionProxyClient {
 
     /// The authorization for this proxy: a minted `Bearer` ID token when
     /// `auth_with_service_account` is set, otherwise none.
-    async fn auth(&self) -> Result<ProxyAuth, Box<dyn std::error::Error>> {
+    async fn auth(&self) -> Result<ProxyAuth, GcpFunctionProxyError> {
         if self.auth_with_service_account {
             Ok(ProxyAuth::Bearer(self.id_token().await?))
         } else {
@@ -60,20 +61,24 @@ impl DbtApiClient for GcpFunctionProxyClient {
     async fn ping(&self) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{}/ping", self.endpoint_url.trim_end_matches('/'));
         let resp = self.auth().await?.apply(self.http.get(url)).send().await?;
-        check_ping_ok(resp)
+        check_ping_ok(resp).map_err(|status| {
+            GcpFunctionProxyError::BadStatus(format!("ping failed with status {status}"))
+        })?;
+        Ok(())
     }
 
     async fn get_runs_queue(
         &self,
         project_name: &str,
     ) -> Result<crate::models::runs::RunsQueue, Box<dyn std::error::Error>> {
-        proxy::get_runs_queue(
+        Ok(proxy::get_runs_queue(
             &self.http,
             &self.endpoint_url,
             self.auth().await?,
             project_name,
         )
         .await
+        .map_err(GcpFunctionProxyError::from)?)
     }
 
     async fn create_run(
@@ -84,7 +89,7 @@ impl DbtApiClient for GcpFunctionProxyClient {
         full_refresh: Option<bool>,
         turbo: bool,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        proxy::create_run(
+        Ok(proxy::create_run(
             &self.http,
             &self.endpoint_url,
             self.auth().await?,
@@ -95,6 +100,7 @@ impl DbtApiClient for GcpFunctionProxyClient {
             turbo,
         )
         .await
+        .map_err(GcpFunctionProxyError::from)?)
     }
 
     async fn check_run_status(
@@ -102,7 +108,11 @@ impl DbtApiClient for GcpFunctionProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<crate::models::runs::RunStatus, Box<dyn std::error::Error>> {
-        proxy::check_run_status(&self.http, &self.endpoint_url, self.auth().await?, run_id).await
+        Ok(
+            proxy::check_run_status(&self.http, &self.endpoint_url, self.auth().await?, run_id)
+                .await
+                .map_err(GcpFunctionProxyError::from)?,
+        )
     }
 
     async fn cancel_run(
@@ -110,7 +120,11 @@ impl DbtApiClient for GcpFunctionProxyClient {
         _project_name: &str,
         run_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        proxy::cancel_run(&self.http, &self.endpoint_url, self.auth().await?, run_id).await
+        Ok(
+            proxy::cancel_run(&self.http, &self.endpoint_url, self.auth().await?, run_id)
+                .await
+                .map_err(GcpFunctionProxyError::from)?,
+        )
     }
 }
 

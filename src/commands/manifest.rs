@@ -98,10 +98,15 @@ pub fn manifest(
 
 /// Copies `<path>/manifest.json` to `dest`, returning the source's last-modified
 /// time (captured before the copy) so its age can be reported.
-fn copy_local(path: &str, dest: &Path) -> Result<Option<SystemTime>, Box<dyn std::error::Error>> {
+fn copy_local(
+    path: &str,
+    dest: &Path,
+) -> Result<Option<SystemTime>, crate::errors::EnvironmentError> {
     let src = crate::utils::expand_tilde(path).join("manifest.json");
     if !src.is_file() {
-        return Err(format!("manifest not found at {}", src.display()).into());
+        return Err(crate::errors::EnvironmentError::ManifestNotFound(
+            src.display().to_string(),
+        ));
     }
     let modified = fs::metadata(&src)?.modified().ok();
     fs::copy(&src, dest)?;

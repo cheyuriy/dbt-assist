@@ -1,3 +1,4 @@
+use crate::errors::GcpError;
 use crate::models::config::AppConfig;
 use google_cloud_storage::client::{
     Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile,
@@ -7,9 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::{env, ops::Deref};
 
-pub async fn get_client(
-    config: &AppConfig,
-) -> Result<(Client, String), Box<dyn std::error::Error>> {
+pub async fn get_client(config: &AppConfig) -> Result<(Client, String), GcpError> {
     let service_account_path = get_service_account_path(config)?;
 
     let client_config = load_service_account(&service_account_path).await?;
@@ -24,7 +23,7 @@ pub async fn get_client(
             .deref()
             .to_string()
     } else {
-        return Err("project ID not found in configuration or service account credentials".into());
+        return Err(GcpError::ProjectIdNotFound);
     };
 
     let gcs_client = Client::new(client_config);
@@ -32,7 +31,7 @@ pub async fn get_client(
     Ok((gcs_client, project_id))
 }
 
-pub fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, GcpError> {
     resolve_service_account_path(config.service_account_path.as_deref())
 }
 
@@ -41,43 +40,39 @@ pub fn get_service_account_path(config: &AppConfig) -> Result<PathBuf, Box<dyn s
 /// `GOOGLE_APPLICATION_CREDENTIALS` env var. In both cases the path is tilde-
 /// expanded and must exist on disk; an invalid configured path does NOT fall
 /// back to the env var.
-pub fn resolve_service_account_path(
-    configured: Option<&str>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn resolve_service_account_path(configured: Option<&str>) -> Result<PathBuf, GcpError> {
     if let Some(service_account_path) = configured {
         let res = crate::utils::expand_tilde(service_account_path);
         if res.exists() {
             Ok(res)
         } else {
-            Err("service account file not found".into())
+            Err(GcpError::ServiceAccountNotFound)
         }
     } else if let Ok(env_path) = env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         let res = crate::utils::expand_tilde(&env_path);
         if res.exists() {
             Ok(res)
         } else {
-            Err("service account file not found".into())
+            Err(GcpError::ServiceAccountNotFound)
         }
     } else {
-        Err("service account file not found".into())
+        Err(GcpError::ServiceAccountNotFound)
     }
 }
 
-pub async fn load_service_account(
-    credentials_path: &Path,
-) -> Result<ClientConfig, Box<dyn std::error::Error>> {
+pub async fn load_service_account(credentials_path: &Path) -> Result<ClientConfig, GcpError> {
     let credentials_file = match CredentialsFile::new_from_file(
         credentials_path.to_str().unwrap().to_string(),
     )
     .await
     {
         Ok(cred) => cred,
-        Err(_) => return Err("service account file not found".into()),
+        Err(_) => return Err(GcpError::ServiceAccountNotFound),
     };
+    // Previously `.unwrap()`, which could panic; surfaced as an error instead.
     let config = ClientConfig::default()
         .with_credentials(credentials_file)
-        .await
-        .unwrap();
+        .await?;
     Ok(config)
 }
 
@@ -87,7 +82,7 @@ pub async fn download_object(
     config: &AppConfig,
     bucket: &str,
     object: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+) -> Result<Vec<u8>, GcpError> {
     let (client, _project_id) = get_client(config).await?;
     let data = client
         .download_object(
@@ -109,7 +104,7 @@ pub async fn download_manifest(
     config: &AppConfig,
     bucket: &str,
     object: &str,
-) -> Result<(Vec<u8>, Option<SystemTime>), Box<dyn std::error::Error>> {
+) -> Result<(Vec<u8>, Option<SystemTime>), GcpError> {
     let (client, _project_id) = get_client(config).await?;
     let req = GetObjectRequest {
         bucket: bucket.to_string(),

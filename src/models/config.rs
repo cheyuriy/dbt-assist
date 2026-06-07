@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
+use crate::errors::EnvironmentError;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppConfig {
     pub dbt_api_connection: DbtApiConnection,
@@ -81,18 +83,18 @@ fn project_config_dir() -> Option<PathBuf> {
 }
 
 /// Pure path resolver: returns `cwd/.<pkg>` without checking existence.
-fn local_config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn local_config_path() -> Result<PathBuf, EnvironmentError> {
     let cwd = env::current_dir()?;
     Ok(cwd.join(format!(".{}", env!("CARGO_PKG_NAME"))))
 }
 
-fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn global_config_dir() -> Result<PathBuf, EnvironmentError> {
     if let Some(proj_dirs) =
         directories::ProjectDirs::from("com", "cheyuriydev", env!("CARGO_PKG_NAME"))
     {
         Ok(proj_dirs.config_dir().to_path_buf())
     } else {
-        Err("could not determine default config directory".into())
+        Err(EnvironmentError::NoDefaultConfigDir)
     }
 }
 
@@ -104,7 +106,7 @@ fn global_config_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 /// - `scope = Some(_)`: pure path resolver. No existence check, env var ignored.
 pub fn config_dir(
     scope: Option<ConfigScope>,
-) -> Result<(PathBuf, ConfigScope), Box<dyn std::error::Error>> {
+) -> Result<(PathBuf, ConfigScope), EnvironmentError> {
     match scope {
         Some(ConfigScope::Local) => Ok((local_config_path()?, ConfigScope::Local)),
         Some(ConfigScope::Global) => Ok((global_config_dir()?, ConfigScope::Global)),
@@ -118,9 +120,7 @@ pub fn config_dir(
                 if dir.exists() {
                     return Ok((dir, ConfigScope::Global));
                 }
-                return Err(
-                    "config directory specified in environment variable does not exist".into(),
-                );
+                return Err(EnvironmentError::EnvConfigDirMissing);
             }
             if let Some(dir) = project_config_dir() {
                 return Ok((dir, ConfigScope::Local));
@@ -132,11 +132,11 @@ pub fn config_dir(
 
 pub fn load_config(
     scope: Option<ConfigScope>,
-) -> Result<(AppConfig, ConfigScope), Box<dyn std::error::Error>> {
+) -> Result<(AppConfig, ConfigScope), EnvironmentError> {
     let (dir, resolved) = config_dir(scope)?;
     let path = dir.join("config.yaml");
     if !path.is_file() {
-        return Err(format!("config file not found at {}", path.display()).into());
+        return Err(EnvironmentError::ConfigNotFound(path.display().to_string()));
     }
     let pkg_name = env!("CARGO_PKG_NAME").replace("-", "_").to_uppercase();
 
@@ -153,7 +153,7 @@ pub fn load_config(
 pub fn save_config(
     config: &AppConfig,
     scope: Option<ConfigScope>,
-) -> Result<ConfigScope, Box<dyn std::error::Error>> {
+) -> Result<ConfigScope, EnvironmentError> {
     let (dir, resolved) = config_dir(scope)?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("config.yaml");

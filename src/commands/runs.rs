@@ -224,7 +224,7 @@ pub(crate) fn save_logs(
     cwd: &Path,
     run_id: &str,
     status: &RunStatus,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+) -> Result<PathBuf, crate::errors::EnvironmentError> {
     let dir = cwd.join(".logs").join(run_id);
     std::fs::create_dir_all(&dir)?;
 
