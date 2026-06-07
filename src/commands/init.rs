@@ -36,6 +36,8 @@ pub fn init() {
         (".manifest", "to store manifest.json"),
         (".aliases", "to store dbt command aliases"),
         (".templates", "to store dbt model templates"),
+        (".logs", "to store saved run logs"),
+        (".dbt-assist", "to store local dbt-assist config"),
     ] {
         let dir = cwd.join(name);
         match fs::create_dir_all(&dir) {
@@ -171,7 +173,14 @@ fn configure_vscode_settings(cwd: &Path) {
 }
 
 /// Folders dbt-assist creates that should not be committed.
-const GITIGNORE_ENTRIES: [&str; 4] = [".aliases", ".manifest", ".templates", ".vscode"];
+const GITIGNORE_ENTRIES: [&str; 6] = [
+    ".aliases",
+    ".dbt-assist",
+    ".logs",
+    ".manifest",
+    ".templates",
+    ".vscode",
+];
 
 /// Append dbt-assist's created folders to `.gitignore` (creating it if needed),
 /// skipping any entry that is already listed.
